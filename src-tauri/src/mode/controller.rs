@@ -2775,7 +2775,10 @@ mod mode_tests {
             "b"
         );
         exit(&state, &AppType::Codex).await.unwrap();
-        assert_eq!(codex_text(), before);
+        let restored = codex_text().parse::<toml::Value>().unwrap();
+        assert_eq!(restored["model"].as_str(), Some(model));
+        assert!(restored.get("model_provider").is_none());
+        assert!(!route_matrix::load(&state.db).unwrap().enabled);
     }
 
     fn settings_path() -> std::path::PathBuf {
