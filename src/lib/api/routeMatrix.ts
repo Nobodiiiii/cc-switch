@@ -18,7 +18,7 @@ export interface MatrixRoute {
   id: string;
   name: string;
   prefix: string;
-  /** Explicit main-route membership; omitted in earlier configurations. */
+  /** Explicit route membership; omitted in earlier configurations. */
   providerIds?: string[];
   activeProviderId: string;
   failover: boolean;

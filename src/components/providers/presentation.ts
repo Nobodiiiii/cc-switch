@@ -140,6 +140,11 @@ export interface SwitchModeInput {
   /** 需要路由的原因（悬停「需要路由」时的说明） */
   routingReason: (provider: Provider) => string;
   serviceRunning: boolean;
+  /** Custom connection scopes can apply their own credential capabilities. */
+  routeCapabilities?: {
+    blocked: (provider: Provider) => boolean;
+    supportsFailover: (provider: Provider) => boolean;
+  };
   actions: {
     switchDirect: (provider: Provider) => void;
     needsRouteDialog: (provider: Provider) => void;
@@ -201,6 +206,12 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
   } = input;
   // 早期绑定托管账号的 Codex 官方卡没有 category，按身份认
   const official = (p: Provider) => isOfficialAccount(app, p);
+  const routingBlocked =
+    input.routeCapabilities?.blocked ??
+    ((p: Provider) => blockedFromRouting(app, p));
+  const canFailover =
+    input.routeCapabilities?.supportsFailover ??
+    ((p: Provider) => supportsFailover(app, p));
 
   const chip = {
     official: (): CardChip => ({
@@ -316,7 +327,7 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
         {
           key: "all",
           items: providers.map((p) => {
-            if (blockedFromRouting(app, p))
+            if (routingBlocked(p))
               return blocked(p, t("providerCard.action.routeHere"), noRoute);
             const chips = officialOnly(p);
             if (p.id === routeId) {
@@ -402,10 +413,10 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
       const rest = providers
         .filter((p) => !queue.includes(p.id))
         .map((p) => {
-          if (blockedFromRouting(app, p))
+          if (routingBlocked(p))
             return blocked(p, t("providerCard.action.addToQueue"), noRoute);
           // Codex 官方账号卡能路由，但后端不让它进队列（靠客户端自己的登录，不能和别家轮换）
-          if (!supportsFailover(app, p))
+          if (!canFailover(p))
             return blocked(
               p,
               t("providerCard.action.addToQueue"),
@@ -451,7 +462,7 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
       {
         key: "all",
         items: providers.map((p) => {
-          if (blockedFromRouting(app, p))
+          if (routingBlocked(p))
             return {
               provider: p,
               presentation: {

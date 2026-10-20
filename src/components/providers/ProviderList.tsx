@@ -1,5 +1,10 @@
 import { CSS } from "@dnd-kit/utilities";
-import { DndContext, closestCenter, type Modifier } from "@dnd-kit/core";
+import {
+  DndContext,
+  closestCenter,
+  type Modifier,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
@@ -93,6 +98,9 @@ interface ProviderListProps {
    * 与第一个分组标题同行
    */
   searchSlot?: HTMLElement | null;
+  /** Isolated route scopes can supply presentation and persist order themselves. */
+  buildSections?: (providers: Provider[]) => ProviderSection[];
+  onSort?: (providerIds: string[]) => void;
 }
 
 export function ProviderList({
@@ -116,6 +124,8 @@ export function ProviderList({
   searchOpen,
   onSearchOpenChange,
   searchSlot,
+  buildSections,
+  onSort,
 }: ProviderListProps) {
   const { t } = useTranslation();
   const { checkProvider, isChecking } = useStreamCheck(appId);
@@ -314,6 +324,7 @@ export function ProviderList({
   }, [isSearchOpen, searchTerm, searchIndex, sortedProviders]);
 
   const sections = useMemo<ProviderSection[]>(() => {
+    if (buildSections) return buildSections(filteredProviders);
     if (switchMode) {
       // 队列按没过滤的全部供应商剔掉已不存在的 id：序号和上下移要按完整队列算，
       // 搜索只决定画哪些卡
@@ -378,6 +389,7 @@ export function ProviderList({
       },
     });
   }, [
+    buildSections,
     switchMode,
     appId,
     t,
@@ -476,6 +488,17 @@ export function ProviderList({
       isTesting={isChecking(provider.id)}
     />
   );
+
+  const reorder = (event: DragEndEvent) => {
+    if (!onSort) return handleDragEnd(event);
+    if (!event.over || event.active.id === event.over.id) return;
+    const ids = sortedProviders.map((provider) => provider.id);
+    const from = ids.indexOf(String(event.active.id));
+    const to = ids.indexOf(String(event.over.id));
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ...ids.splice(from, 1));
+    onSort(ids);
+  };
 
   // 搜索框放在列表上方第一行的最右端，不盖住卡片、打开时卡片也不下移
   const searchField = (
@@ -584,7 +607,7 @@ export function ProviderList({
           sensors={sensors}
           modifiers={verticalDragModifiers}
           collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
+          onDragEnd={reorder}
         >
           {sections.map((section, index) => (
             <section key={section.key} className="space-y-2">

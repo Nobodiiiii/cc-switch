@@ -32,7 +32,7 @@ jobs:
         run: |
           pnpm typecheck
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          pnpm exec vitest run tests/components/RouteMatrixPanel.test.tsx tests/components/SwitchModePanel.test.tsx
+          pnpm exec vitest run tests/components/RouteMatrixPanel.test.tsx tests/components/SwitchModePanel.test.tsx tests/components/ProviderList.test.tsx tests/components/AutoFailoverConfigPanel.test.tsx tests/components/ModeDialog.test.tsx tests/integration/App.test.tsx
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm build:renderer
       - name: Read pinned Rust version

@@ -584,7 +584,7 @@ export function SwitchModePanel({
           </div>
         )}
         {view === "matrix" && app === "codex" ? (
-          <RouteMatrixPanel providers={providers} />
+          <RouteMatrixPanel providers={providers} {...listCallbacks} />
         ) : (
           <ProviderList
             {...listCallbacks}

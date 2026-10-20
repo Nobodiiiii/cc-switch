@@ -8,10 +8,11 @@ Windows CI 也会产出包含前端资源的独立测试程序，位于构建的
 
 1. 在 CC Switch 的 Codex 页面添加所需供应商。官方账号卡片必须绑定 CC Switch 账号管理中的具体 ChatGPT 账号。
 2. 在 Codex 页面上方选择「路由矩阵」页签。查看页签不会启用模式，启用需要点击页面内的切换按钮。
-3. 在「主路由供应商（可多选）」中勾选多个官方账号或其他供应商，再添加不带前缀的模型 ID。界面自动为所选供应商创建同名映射，实际模型名可分别调整。在「当前供应商」选择默认账号；也能为单个模型指定供应商，因此不同的原始模型名可以同时使用不同供应商。主路由不自动故障转移。
-4. 添加副路由，为每组设置唯一前缀。比如前缀 `backup` 下的 `gpt-test` 发布成 `rm-backup/gpt-test`。模型与目标映射只在该路由内部有效。
-5. 副路由按需开启故障转移，分别设置额外尝试次数、首包超时、流静默超时、普通请求超时、失败阈值和冷却秒数。先尝试所选供应商，再按该模型的映射列表顺序尝试其余供应商；主路由始终手动切换。
-6. 首次点「保存并切换到路由矩阵」。之后调整所选供应商、当前账号、模型映射、前缀和策略只需点「保存配置」。
+3. 选择「主路由」。内部直接复用普通「路由」模式的供应商卡片和操作：在卡片上点「加入此路由」，可同时加入多个官方账号；点「路由到此」手动选择当前账号，更多菜单中可从此路由移除。操作立即保存。主路由始终手动切换，故障转移开关不可开启。
+4. 点「模型映射」在设置抽屉中添加不带前缀的模型 ID。界面自动为成员创建同名映射，实际模型名可分别调整，也能为单个模型指定供应商。因此不同的原始模型名可以同时使用不同供应商。完成后点「保存路由设置」。
+5. 点「添加副路由」，新路由会显示为独立页签。每个页签内仍是相同的供应商卡片界面，点齿轮配置名称和唯一前缀。比如 `backup` 下的 `gpt-test` 发布成 `rm-backup/gpt-test`。模型与目标映射只在该路由内部有效。
+6. 副路由按需开启状态栏中的故障转移开关，使用与普通路由相同的「加入队列 / 移出队列」、P1/P2 优先级、上移下移和拖动排序。齿轮抽屉复用相同的策略表单，分别保存重试、超时、失败阈值和恢复等待时间。队列顺序同步到该路由各模型的上游映射，未配置映射的成员不会被该模型尝试。
+7. 首次点「保存并切换到路由矩阵」。之后卡片、队列和开关操作即时保存；名称、前缀、模型和策略在对应抽屉中点「保存路由设置」。首次接入前所做的操作只保存配置，启用后生效。
 
 保存一次配置后，下一次请求读取新配置；已开始的请求继续使用原配置。主路由切换不会更改副路由，副路由的失败也不会触发主路由的熔断或改变上游原有路由状态。
 
@@ -36,6 +37,7 @@ Windows CI 也会产出包含前端资源的独立测试程序，位于构建的
 - 「恢复原连接并停用」只恢复原来的模型、供应商和文件目录设置，保留接入后对项目、MCP 等其他配置的修改。不修改官方登录文件。
 - 当前模式同时显示在模式页签、侧栏和托盘。切到直连、路由或聚合时先退出矩阵；切换失败会尝试恢复矩阵。编辑供应商卡片只更新映射引用的配置，不覆盖矩阵连接。托盘显示当前主路由账号，账号切换在矩阵页中完成。
 - 已有配置没有 `providerIds` 字段时，界面从模型映射和当前供应商恢复主路由成员，保存多选后使用显式名单。
+- 每个路由的卡片操作只调用矩阵配置接口，排序只修改该路由的成员顺序和模型映射。普通路由的供应商指针、故障转移队列、策略和全局供应商排序不随之改变。矩阵卡片不读取普通路由的健康数据。
 - CC Switch 需保持运行。重开本扩展版 CC Switch 时会恢复服务；普通路由的启动/关闭及其他应用仍由上游管理。
 - 前缀移除后保留归属，不能转给不同 ID 的新路由。未知、损坏、已移除的模型 ID 直接报错，不回落到主路由。
 - 供应商被删除后，相关路由会明确报错。先移除失效映射再保存；即使映射失效也可以断开连接。
@@ -50,6 +52,8 @@ Windows CI 也会产出包含前端资源的独立测试程序，位于构建的
 - `src-tauri/src/commands/route_matrix.rs`：三个独立 Tauri 命令。
 - `src/components/route-matrix/` 和 `src/lib/api/routeMatrix.ts`：配置界面及类型接口。
 
+界面使用现有 `ProviderList`、`ProviderCard` 和路由卡片展示逻辑。普通路由与矩阵共用 `RouteControls` 状态栏、`RoutingPolicyFields` 策略表单；这些共用组件只负责展示，数据读写由各自调用方提供。矩阵的作用域适配集中在 `route-matrix/routing.ts`。
+
 少量接点负责命令注册、代理子路径、请求上下文和逐供应商转发；认证刷新、Responses/Chat/Anthropic 转换和流处理继续使用上游实现。原有路由/聚合路径不调用矩阵选路，也不共享矩阵的健康状态。配置升级通过 `version` 显式处理；未知版本报错，避免悄悄按错误策略路由。
 
 合并上游时重点检查这些接点，运行下面检查。上游非重大更新通常可保持模块不变；无法保证未包含此扩展的官方二进制直接识别该连接，升级前应先断开矩阵或使用合并扩展后的构建。
@@ -57,7 +61,7 @@ Windows CI 也会产出包含前端资源的独立测试程序，位于构建的
 ```powershell
 pnpm install --frozen-lockfile
 pnpm typecheck
-pnpm exec vitest run tests/components/RouteMatrixPanel.test.tsx tests/components/SwitchModePanel.test.tsx
+pnpm exec vitest run tests/components/RouteMatrixPanel.test.tsx tests/components/SwitchModePanel.test.tsx tests/components/ProviderList.test.tsx tests/components/AutoFailoverConfigPanel.test.tsx tests/components/ModeDialog.test.tsx tests/integration/App.test.tsx
 pnpm build:renderer
 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix:: -- --test-threads=1
 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix_mode_ -- --test-threads=1

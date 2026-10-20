@@ -24,6 +24,19 @@ const TAURI_ENDPOINT = "http://tauri.local";
 const useDragSortMock = vi.fn();
 const useSortableMock = vi.fn();
 const providerCardRenderSpy = vi.fn();
+const dragCapture = vi.hoisted(() => ({
+  onDragEnd: undefined as undefined | ((event: any) => void),
+}));
+vi.mock("@dnd-kit/core", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@dnd-kit/core")>();
+  return {
+    ...original,
+    DndContext: (props: any) => {
+      dragCapture.onDragEnd = props.onDragEnd;
+      return <original.DndContext {...props} />;
+    },
+  };
+});
 /** 某张卡片最近一次渲染拿到的 props。 */
 const lastProps = (id: string) =>
   providerCardRenderSpy.mock.calls
@@ -1036,4 +1049,41 @@ describe("ProviderList Component", () => {
       screen.getByRole("button", { name: "provider.addProvider" }),
     ).toBeInTheDocument();
   });
+});
+
+it("uses scoped drag persistence without invoking the global provider sorter", () => {
+  const a = createProvider({ id: "a", name: "A" });
+  const b = createProvider({ id: "b", name: "B" });
+  const globalSort = vi.fn();
+  const scopedSort = vi.fn();
+  useDragSortMock.mockReturnValue({
+    sortedProviders: [a, b],
+    sensors: [],
+    handleDragEnd: globalSort,
+  });
+  renderWithQueryClient(
+    <ProviderList
+      providers={{ a, b }}
+      currentProviderId="a"
+      appId="codex"
+      onSwitch={vi.fn()}
+      onEdit={vi.fn()}
+      onDelete={vi.fn()}
+      onDuplicate={vi.fn()}
+      onOpenWebsite={vi.fn()}
+      onSort={scopedSort}
+      buildSections={(providers) => [
+        {
+          key: "route",
+          items: providers.map((provider) => ({
+            provider,
+            presentation: { buttons: [], chips: [] },
+          })),
+        },
+      ]}
+    />,
+  );
+  dragCapture.onDragEnd?.({ active: { id: "a" }, over: { id: "b" } });
+  expect(scopedSort).toHaveBeenCalledWith(["b", "a"]);
+  expect(globalSort).not.toHaveBeenCalled();
 });

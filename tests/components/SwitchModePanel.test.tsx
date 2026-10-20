@@ -132,9 +132,9 @@ describe("SwitchModePanel — Stack mode", () => {
     }
     fireEvent.click(screen.getByRole("button", { name: "mode.names.matrix" }));
     expect(
-      await screen.findByRole("region", { name: "主路由" }),
+      await screen.findByRole("tabpanel", { name: "主路由" }),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId("card-a")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("card-a")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "保存并切换到路由矩阵" }),
     ).toBeInTheDocument();
@@ -149,13 +149,13 @@ describe("SwitchModePanel — Stack mode", () => {
       ).toHaveAttribute("aria-pressed", "true"),
     );
     expect(
-      await screen.findByRole("region", { name: "主路由" }),
+      await screen.findByRole("tabpanel", { name: "主路由" }),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId("card-a")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("card-a")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "mode.names.direct" }));
     expect(await screen.findByTestId("card-a")).toBeInTheDocument();
     expect(
-      screen.queryByRole("region", { name: "主路由" }),
+      screen.queryByRole("tabpanel", { name: "主路由" }),
     ).not.toBeInTheDocument();
   });
   it("opens the Codex aggregation settings from the Stack tab only", async () => {

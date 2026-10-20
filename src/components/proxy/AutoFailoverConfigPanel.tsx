@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Save, Loader2, Info } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { useAppProxyConfig, useUpdateAppProxyConfig } from "@/lib/query/proxy";
+import { RoutingPolicyFields } from "./RoutingPolicyFields";
 
 export interface AutoFailoverConfigPanelProps {
   appType: string;
@@ -232,161 +233,29 @@ export function AutoFailoverConfigPanel({
           </AlertDescription>
         </Alert>
 
-        {/* 重试与超时配置 */}
-        <div className="space-y-4 rounded-lg border border-white/10 bg-subtle p-4">
-          <h4 className="text-sm font-semibold">
-            {t("proxy.autoFailover.retrySettings", "重试与超时设置")}
-          </h4>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor={`maxRetries-${appType}`}>
-                {t("proxy.autoFailover.maxRetries", "最大重试次数")}
-              </Label>
-              <Input
-                id={`maxRetries-${appType}`}
-                type="number"
-                min="0"
-                max="10"
-                value={formData.maxRetries}
-                onChange={(e) =>
-                  setFormData({ ...formData, maxRetries: e.target.value })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.maxRetriesHint",
-                  "请求失败时的重试次数（0-10）",
-                )}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor={`failureThreshold-${appType}`}>
-                {t("proxy.autoFailover.failureThreshold", "失败阈值")}
-              </Label>
-              <Input
-                id={`failureThreshold-${appType}`}
-                type="number"
-                min="1"
-                max="20"
-                value={formData.circuitFailureThreshold}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitFailureThreshold: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.failureThresholdHint",
-                  "连续失败多少次后打开熔断器（建议: 3-10）",
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 超时配置 */}
-        <div className="space-y-4 rounded-lg border border-white/10 bg-subtle p-4">
-          <h4 className="text-sm font-semibold">
-            {t("proxy.autoFailover.timeoutSettings", "超时配置")}
-          </h4>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor={`streamingFirstByte-${appType}`}>
-                {t(
-                  "proxy.autoFailover.streamingFirstByte",
-                  "流式首字节超时（秒）",
-                )}
-              </Label>
-              <Input
-                id={`streamingFirstByte-${appType}`}
-                type="number"
-                min="1"
-                max="120"
-                value={formData.streamingFirstByteTimeout}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    streamingFirstByteTimeout: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.streamingFirstByteHint",
-                  "等待首个数据块的最大时间，范围 1-120 秒，默认 60 秒",
-                )}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor={`streamingIdle-${appType}`}>
-                {t("proxy.autoFailover.streamingIdle", "流式静默超时（秒）")}
-              </Label>
-              <Input
-                id={`streamingIdle-${appType}`}
-                type="number"
-                min="0"
-                max="600"
-                value={formData.streamingIdleTimeout}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    streamingIdleTimeout: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.streamingIdleHint",
-                  "数据块之间的最大间隔，范围 60-600 秒，填 0 禁用（防止中途卡住）",
-                )}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor={`nonStreaming-${appType}`}>
-                {t("proxy.autoFailover.nonStreaming", "非流式超时（秒）")}
-              </Label>
-              <Input
-                id={`nonStreaming-${appType}`}
-                type="number"
-                min="60"
-                max="1200"
-                value={formData.nonStreamingTimeout}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    nonStreamingTimeout: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.nonStreamingHint",
-                  "非流式请求的总超时时间，范围 60-1200 秒，默认 600 秒（10 分钟）",
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 熔断器配置 */}
-        <div className="space-y-4 rounded-lg border border-white/10 bg-subtle p-4">
-          <h4 className="text-sm font-semibold">
-            {t("proxy.autoFailover.circuitBreakerSettings", "熔断器配置")}
-          </h4>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <RoutingPolicyFields
+          idPrefix={appType}
+          disabled={isDisabled}
+          values={{
+            maxRetries: formData.maxRetries,
+            failureThreshold: formData.circuitFailureThreshold,
+            firstByteTimeout: formData.streamingFirstByteTimeout,
+            idleTimeout: formData.streamingIdleTimeout,
+            requestTimeout: formData.nonStreamingTimeout,
+            cooldownSeconds: formData.circuitTimeoutSeconds,
+          }}
+          onChange={(key, value) => {
+            const field = {
+              maxRetries: "maxRetries",
+              failureThreshold: "circuitFailureThreshold",
+              firstByteTimeout: "streamingFirstByteTimeout",
+              idleTimeout: "streamingIdleTimeout",
+              requestTimeout: "nonStreamingTimeout",
+              cooldownSeconds: "circuitTimeoutSeconds",
+            } as const;
+            setFormData({ ...formData, [field[key]]: value });
+          }}
+          circuitBefore={
             <div className="space-y-2">
               <Label htmlFor={`successThreshold-${appType}`}>
                 {t("proxy.autoFailover.successThreshold", "恢复成功阈值")}
@@ -412,87 +281,63 @@ export function AutoFailoverConfigPanel({
                 )}
               </p>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor={`timeoutSeconds-${appType}`}>
-                {t("proxy.autoFailover.timeout", "恢复等待时间（秒）")}
-              </Label>
-              <Input
-                id={`timeoutSeconds-${appType}`}
-                type="number"
-                min="0"
-                max="300"
-                value={formData.circuitTimeoutSeconds}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitTimeoutSeconds: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.timeoutHint",
-                  "熔断器打开后，等待多久后尝试恢复（建议: 30-120）",
-                )}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor={`errorRateThreshold-${appType}`}>
-                {t("proxy.autoFailover.errorRate", "错误率阈值 (%)")}
-              </Label>
-              <Input
-                id={`errorRateThreshold-${appType}`}
-                type="number"
-                min="0"
-                max="100"
-                step="5"
-                value={formData.circuitErrorRateThreshold}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitErrorRateThreshold: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.errorRateHint",
-                  "错误率超过此值时打开熔断器",
-                )}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor={`minRequests-${appType}`}>
-                {t("proxy.autoFailover.minRequests", "最小请求数")}
-              </Label>
-              <Input
-                id={`minRequests-${appType}`}
-                type="number"
-                min="5"
-                max="100"
-                value={formData.circuitMinRequests}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitMinRequests: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-fg-2">
-                {t(
-                  "proxy.autoFailover.minRequestsHint",
-                  "计算错误率前的最小请求数",
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
+          }
+          circuitAfter={
+            <>
+              <div className="space-y-2">
+                <Label htmlFor={`errorRateThreshold-${appType}`}>
+                  {t("proxy.autoFailover.errorRate", "错误率阈值 (%)")}
+                </Label>
+                <Input
+                  id={`errorRateThreshold-${appType}`}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={formData.circuitErrorRateThreshold}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      circuitErrorRateThreshold: e.target.value,
+                    })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-fg-2">
+                  {t(
+                    "proxy.autoFailover.errorRateHint",
+                    "错误率超过此值时打开熔断器",
+                  )}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`minRequests-${appType}`}>
+                  {t("proxy.autoFailover.minRequests", "最小请求数")}
+                </Label>
+                <Input
+                  id={`minRequests-${appType}`}
+                  type="number"
+                  min="5"
+                  max="100"
+                  value={formData.circuitMinRequests}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      circuitMinRequests: e.target.value,
+                    })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-fg-2">
+                  {t(
+                    "proxy.autoFailover.minRequestsHint",
+                    "计算错误率前的最小请求数",
+                  )}
+                </p>
+              </div>
+            </>
+          }
+        />
 
         {/* 操作按钮 */}
         <div className="flex justify-end gap-2 pt-2">
