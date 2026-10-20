@@ -1,0 +1,53 @@
+name: Route Matrix Windows package
+
+on:
+  push:
+    branches: [feat/route-matrix]
+    paths: [.github/workflows/route-matrix-package.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: route-matrix-package-${{ github.ref }}
+  cancel-in-progress: true
+
+# Packaging is separate so already verified source can be built without
+# compiling the complete test harness again. Compatibility checks remain in
+# route-matrix.yml; this workflow does not claim to run them.
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - name: Install frontend dependencies
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack install
+          pnpm install --frozen-lockfile
+      - name: Read pinned Rust version
+        id: rust
+        shell: pwsh
+        run: |
+          $channel = (Select-String -Path rust-toolchain.toml -Pattern 'channel = "([^"]+)"').Matches[0].Groups[1].Value
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: src-tauri -> target
+          shared-key: route-matrix
+      - name: Build portable Windows preview
+        run: pnpm tauri build --debug --no-bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cc-switch-route-matrix-windows-x64
+          path: src-tauri/target/debug/cc-switch.exe
+          if-no-files-found: error
