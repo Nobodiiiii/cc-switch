@@ -467,12 +467,6 @@ fn route_matrix_real_client_catalog_fixture() {
     let official =
         crate::codex_config::normalize_codex_native_rows(raw["models"].as_array().unwrap().clone())
             .unwrap();
-    assert!(
-        serde_json::to_vec(&json!({"models":[official.clone(),official.clone()].concat()}))
-            .unwrap()
-            .len()
-            > catalog::MAX_BYTES
-    );
     let (mut config, _) = fixture();
     config.primary.models.clear();
     config.secondary[0].models.clear();

@@ -21,7 +21,7 @@ parser.add_argument('--config', required=True)
 parser.add_argument('--work-dir', required=True)
 args = parser.parse_args()
 payload = pathlib.Path(args.catalog).read_bytes()
-assert len(payload) <= 1024 * 1024, 'Catalog exceeds the Codex decoded response limit'
+assert len(payload) <= 1024 * 1024, 'Catalog exceeds the Codex JSON response limit'
 catalog = json.loads(payload)
 expected = {
     row['slug'] for row in catalog['models']

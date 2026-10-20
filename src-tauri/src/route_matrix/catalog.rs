@@ -1,4 +1,4 @@
-//! Codex bounds decoded model-catalog responses to 1 MiB. Normalized official
+//! Codex bounds JSON model-catalog responses to 1 MiB. Normalized official
 //! rows contain both legacy base_instructions and the equivalent modern
 //! model_messages.instructions_template. Only remove that proven duplicate;
 //! retain the complete modern instructions and all capability/policy metadata.
