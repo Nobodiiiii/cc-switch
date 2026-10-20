@@ -64,8 +64,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm exec vitest run tests/components/RouteMatrixPanel.test.tsx tests/components/SwitchModePanel.test.tsx tests/components/ProviderList.test.tsx tests/components/AutoFailoverConfigPanel.test.tsx tests/components/ModeDialog.test.tsx tests/integration/App.test.tsx
 pnpm build:renderer
-cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix:: -- --test-threads=1
-cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix_mode_ -- --test-threads=1
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix -- --test-threads=1
 ```
 
 `.github/workflows/route-matrix.yml` 在功能分支更新时运行 Windows 构建与兼容性测试。HTTP 测试只连接本机假上游，在同一代理进程中改配置，验证目标模型、认证隔离、故障转移、SSE、压缩和拒绝跨路由回落，不读取实际账号。
