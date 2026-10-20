@@ -357,9 +357,12 @@ fn empty_mappings_are_optional_but_still_require_a_valid_provider_and_account() 
         model
     );
     assert!(config.resolve(&model, &all, Arc::default()).is_ok());
-    all.get_mut("a").unwrap().category = Some("official".into());
+    let original_provider = all["a"].clone();
+    let unbound_official = all.get_mut("a").unwrap();
+    unbound_official.category = Some("official".into());
+    unbound_official.settings_config = json!({"auth": {}, "config": ""});
     assert!(config.validate(&all).unwrap_err().contains("必须绑定"));
-    all.get_mut("a").unwrap().category = None;
+    all.insert("a".into(), original_provider);
     config.primary.active_provider_id.clear();
     assert!(config.validate(&all).unwrap_err().contains("选择供应商"));
     config.enabled = false;
