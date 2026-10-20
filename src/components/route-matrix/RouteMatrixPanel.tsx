@@ -3,13 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Provider } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { providersApi } from "@/lib/api/providers";
+import { resolveCodexOfficialIdentity } from "@/utils/providerCapabilities";
 import {
   routeMatrixApi,
   matrixPolicy,
@@ -36,7 +31,6 @@ export function RouteMatrixPanel({
     refetchOnWindowFocus: false,
   });
   const formRef = useRef<HTMLFormElement>(null);
-  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<MatrixConfig>();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -64,8 +58,10 @@ export function RouteMatrixPanel({
       await Promise.all([
         client.invalidateQueries({ queryKey }),
         client.invalidateQueries({ queryKey: ["proxyStatus"] }),
-        client.invalidateQueries({ queryKey: ["appMode"] }),
+        client.invalidateQueries({ queryKey: ["providers", "codex"] }),
+        client.invalidateQueries({ queryKey: ["proxyTakeoverStatus"] }),
       ]);
+      providersApi.updateTrayMenu().catch(() => undefined);
       setMessage(
         connect === undefined
           ? "已保存，后续请求使用新配置；进行中的请求保持原路由。"
@@ -81,142 +77,103 @@ export function RouteMatrixPanel({
   }
 
   return (
-    <>
-      <div className="mx-6 mb-2 flex items-center justify-between rounded-lg border px-3 py-2">
-        <div className="text-sm">
-          <strong>路由矩阵</strong>
-          <span className="ml-2 text-muted-foreground">
-            路由 + 聚合{query.data?.enabled ? " · 已启用" : ""}
-          </span>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setError("");
-            setMessage("");
-            if (query.data) setDraft(structuredClone(query.data));
-            setOpen(true);
-          }}
-        >
-          配置连接
-        </Button>
+    <div className="space-y-4" aria-label="路由矩阵配置">
+      <div className="space-y-1">
+        <h2 className="font-semibold">
+          路由矩阵 · 路由 + 聚合 {query.data?.enabled ? "（当前生效）" : ""}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          主路由使用原始模型名，手动切换供应商；副路由使用独立前缀和故障转移。保存后，后续请求立即采用新配置。
+        </p>
       </div>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto gap-4 p-6">
-          <DialogHeader className="p-0">
-            <div className="flex items-center justify-between gap-4">
-              <DialogTitle>路由矩阵 · Route Matrix</DialogTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={pending}
-                onClick={() => setOpen(false)}
-              >
-                关闭
+      <p className="text-xs text-muted-foreground">
+        官方供应商需先绑定 CC Switch 中的具体 ChatGPT 账号。首次接入需要 Codex
+        加载固定代理地址；模型选择器按客户端刷新节奏更新，可直接输入模型 ID。
+      </p>
+      {(query.error || error) && (
+        <p role="alert" className="text-sm text-destructive">
+          {error || extractErrorMessage(query.error)}
+        </p>
+      )}
+      {message && (
+        <p role="status" className="text-sm">
+          {message}
+        </p>
+      )}
+      {!draft ? (
+        <p>正在加载配置…</p>
+      ) : (
+        <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
+          <fieldset disabled={pending} className="min-w-0 space-y-4">
+            <RouteEditor
+              primary
+              route={draft.primary}
+              providers={providers}
+              onChange={(primary) => setDraft({ ...draft, primary })}
+            />
+            {draft.secondary.map((route, index) => (
+              <RouteEditor
+                key={route.id}
+                route={route}
+                providers={providers}
+                onRemove={() =>
+                  setDraft({
+                    ...draft,
+                    secondary: draft.secondary.filter((_, i) => i !== index),
+                  })
+                }
+                onChange={(next) =>
+                  setDraft({
+                    ...draft,
+                    secondary: draft.secondary.map((r, i) =>
+                      i === index ? next : r,
+                    ),
+                  })
+                }
+              />
+            ))}
+            <Button
+              variant="outline"
+              onClick={() => {
+                const id = `route-${crypto.randomUUID().slice(0, 8)}`;
+                setDraft({
+                  ...draft,
+                  secondary: [
+                    ...draft.secondary,
+                    {
+                      id,
+                      prefix: id,
+                      name: "副路由",
+                      activeProviderId: Object.keys(providers)[0] ?? "",
+                      failover: false,
+                      policy: matrixPolicy(),
+                      models: [],
+                    },
+                  ],
+                });
+              }}
+            >
+              添加副路由
+            </Button>
+            <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+              <Button variant="outline" onClick={() => void action()}>
+                保存配置
               </Button>
-            </div>
-            <DialogDescription>
-              主路由使用原始模型名，手动切换供应商；副路由使用独立前缀和故障转移。保存后，后续请求立即采用新配置。
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-xs text-muted-foreground">
-            官方供应商需先绑定 CC Switch 中的具体 ChatGPT 账号。首次接入需要
-            Codex
-            加载固定代理地址；模型选择器按客户端刷新节奏更新，可直接输入模型
-            ID。
-          </p>
-          {(query.error || error) && (
-            <p role="alert" className="text-sm text-destructive">
-              {error || extractErrorMessage(query.error)}
-            </p>
-          )}
-          {message && (
-            <p role="status" className="text-sm">
-              {message}
-            </p>
-          )}
-          {!draft ? (
-            <p>正在加载配置…</p>
-          ) : (
-            <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
-              <fieldset disabled={pending} className="min-w-0 space-y-4">
-                <RouteEditor
-                  primary
-                  route={draft.primary}
-                  providers={providers}
-                  onChange={(primary) => setDraft({ ...draft, primary })}
-                />
-                {draft.secondary.map((route, index) => (
-                  <RouteEditor
-                    key={route.id}
-                    route={route}
-                    providers={providers}
-                    onRemove={() =>
-                      setDraft({
-                        ...draft,
-                        secondary: draft.secondary.filter(
-                          (_, i) => i !== index,
-                        ),
-                      })
-                    }
-                    onChange={(next) =>
-                      setDraft({
-                        ...draft,
-                        secondary: draft.secondary.map((r, i) =>
-                          i === index ? next : r,
-                        ),
-                      })
-                    }
-                  />
-                ))}
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const id = `route-${crypto.randomUUID().slice(0, 8)}`;
-                    setDraft({
-                      ...draft,
-                      secondary: [
-                        ...draft.secondary,
-                        {
-                          id,
-                          prefix: id,
-                          name: "副路由",
-                          activeProviderId: Object.keys(providers)[0] ?? "",
-                          failover: false,
-                          policy: matrixPolicy(),
-                          models: [],
-                        },
-                      ],
-                    });
-                  }}
-                >
-                  添加副路由
+              {query.data?.enabled && (
+                <Button variant="outline" onClick={() => void action(false)}>
+                  恢复原连接并停用
                 </Button>
-                <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-                  <Button variant="outline" onClick={() => void action()}>
-                    保存配置
-                  </Button>
-                  {query.data?.enabled && (
-                    <Button
-                      variant="outline"
-                      onClick={() => void action(false)}
-                    >
-                      恢复原连接并停用
-                    </Button>
-                  )}
-                  <Button onClick={() => void action(true)}>
-                    {query.data?.enabled
-                      ? "重新接入此连接"
-                      : "保存并接入 Codex"}
-                  </Button>
-                </div>
-              </fieldset>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
+              )}
+              {!query.data?.enabled && (
+                <Button onClick={() => void action(true)}>
+                  保存并切换到路由矩阵
+                </Button>
+              )}
+            </div>
+          </fieldset>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -264,6 +221,41 @@ function RouteEditor({
   onChange: (route: MatrixRoute) => void;
   onRemove?: () => void;
 }) {
+  // Older configurations expressed membership only through model mappings.
+  const memberIds = route.providerIds ?? [
+    ...new Set([
+      ...route.models.flatMap((model) =>
+        model.targets.map((t) => t.providerId),
+      ),
+      ...(route.activeProviderId ? [route.activeProviderId] : []),
+    ]),
+  ];
+  const members = Object.fromEntries(
+    Object.entries(providers).filter(([id]) => memberIds.includes(id)),
+  );
+  const mappingProviders = primary ? members : providers;
+  const toggleMember = (id: string, checked: boolean) => {
+    const providerIds = checked
+      ? [...memberIds, id]
+      : memberIds.filter((p) => p !== id);
+    onChange({
+      ...route,
+      providerIds,
+      activeProviderId: providerIds.includes(route.activeProviderId)
+        ? route.activeProviderId
+        : (providerIds[0] ?? ""),
+      models: route.models.map((model) => ({
+        ...model,
+        activeProviderId:
+          model.activeProviderId && providerIds.includes(model.activeProviderId)
+            ? model.activeProviderId
+            : undefined,
+        targets: checked
+          ? [...model.targets, { providerId: id, model: model.id }]
+          : model.targets.filter((target) => target.providerId !== id),
+      })),
+    });
+  };
   const policyLabels: [keyof MatrixPolicy, string][] = [
     ["maxRetries", "最多额外尝试"],
     ["firstByteTimeout", "首包超时（秒）"],
@@ -297,7 +289,7 @@ function RouteEditor({
           </label>
         )}
         <ProviderSelect
-          providers={providers}
+          providers={mappingProviders}
           label="当前供应商"
           value={route.activeProviderId}
           onChange={(activeProviderId) =>
@@ -324,9 +316,48 @@ function RouteEditor({
       </div>
       <p className="text-xs text-muted-foreground">
         {primary
-          ? "不带前缀；模型可跟随路由当前供应商，也可单独指定。切换前请补齐相应映射。"
+          ? "可同时加入多个官方供应商，手动选择当前账号；不自动轮换。不带前缀的模型可跟随当前供应商，也可单独指定。"
           : `发布为 rm-${route.prefix}/模型名。先尝试当前供应商，再按下方映射顺序转移；不会进入其他路由。前缀移除后仍保留归属。`}
       </p>
+      {primary && (
+        <fieldset className="space-y-2 rounded-md bg-muted/40 p-3">
+          <legend className="px-1 text-sm font-medium">
+            主路由供应商（可多选）
+          </legend>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {[...new Set([...Object.keys(providers), ...memberIds])].map(
+              (id) => {
+                const provider = providers[id];
+                const identity =
+                  provider && resolveCodexOfficialIdentity("codex", provider);
+                const unbound = identity === "native_login";
+                return (
+                  <label key={id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      aria-label={`加入主路由：${provider?.name ?? id}`}
+                      checked={memberIds.includes(id)}
+                      disabled={unbound && !memberIds.includes(id)}
+                      onChange={(e) => toggleMember(id, e.target.checked)}
+                    />
+                    <span>
+                      {provider?.name ?? `已删除：${id}`}
+                      {identity === "managed_account"
+                        ? " · 官方账号"
+                        : unbound
+                          ? " · 请先绑定账号"
+                          : ""}
+                    </span>
+                  </label>
+                );
+              },
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            加入供应商时自动为现有模型添加同名映射，实际模型名可在下方调整。官方账号请先在供应商卡片中绑定。
+          </p>
+        </fieldset>
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         {policyLabels
           .filter(
@@ -377,7 +408,7 @@ function RouteEditor({
                 }
               >
                 <option value="">跟随路由当前供应商</option>
-                {Object.values(providers).map((p) => (
+                {Object.values(mappingProviders).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
@@ -389,7 +420,21 @@ function RouteEditor({
                 aria-label="发布模型 ID"
                 placeholder="发布模型 ID，如 gpt-6.1-sol"
                 value={model.id}
-                onChange={(e) => update({ ...model, id: e.target.value })}
+                onChange={(e) =>
+                  update({
+                    ...model,
+                    id: e.target.value,
+                    targets: primary
+                      ? model.targets.map((target) => ({
+                          ...target,
+                          model:
+                            !target.model || target.model === model.id
+                              ? e.target.value
+                              : target.model,
+                        }))
+                      : model.targets,
+                  })
+                }
               />
               <Button
                 variant="ghost"
@@ -411,7 +456,7 @@ function RouteEditor({
               >
                 <ProviderSelect
                   label="映射供应商"
-                  providers={providers}
+                  providers={mappingProviders}
                   value={target.providerId}
                   onChange={(providerId) =>
                     update({
@@ -453,21 +498,23 @@ function RouteEditor({
                 </Button>
               </div>
             ))}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                update({
-                  ...model,
-                  targets: [
-                    ...model.targets,
-                    { providerId: "", model: model.id },
-                  ],
-                })
-              }
-            >
-              添加上游映射
-            </Button>
+            {!primary && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  update({
+                    ...model,
+                    targets: [
+                      ...model.targets,
+                      { providerId: "", model: model.id },
+                    ],
+                  })
+                }
+              >
+                添加上游映射
+              </Button>
+            )}
             <details>
               <summary className="cursor-pointer text-xs text-muted-foreground">
                 模型能力参数（Codex 原生 JSON）
@@ -510,7 +557,9 @@ function RouteEditor({
               ...route.models,
               {
                 id: "",
-                targets: [{ providerId: route.activeProviderId, model: "" }],
+                targets: primary
+                  ? memberIds.map((providerId) => ({ providerId, model: "" }))
+                  : [{ providerId: route.activeProviderId, model: "" }],
                 catalog: {},
               },
             ],

@@ -59,7 +59,7 @@ export interface RouteSwitchResult {
 }
 
 /** 应用当前的连接方式。 */
-export type AppMode = "direct" | "route" | "stack";
+export type AppMode = "direct" | "route" | "stack" | "matrix";
 
 /** 应用页模式行用的状态（后端 `get_app_mode`）。 */
 export interface AppModeView {

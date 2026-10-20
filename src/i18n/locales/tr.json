@@ -4073,7 +4073,8 @@
       "route": "Yönlendirme",
       "stack": "Birleştirme",
       "mapping": "Eşleme",
-      "mappingFull": "Model eşleme"
+      "mappingFull": "Model eşleme",
+      "matrix": "Rota Matrisi"
     },
     "needsAttention": "Dikkat edilmesi gerekiyor",
     "back": "Geri"
@@ -4131,7 +4132,8 @@
     "names": {
       "direct": "Doğrudan",
       "route": "Yönlendirme",
-      "stack": "Birleştirme"
+      "stack": "Birleştirme",
+      "matrix": "Rota Matrisi"
     },
     "active": "aktif",
     "activeTitle": "{{mode}} aktif",
@@ -4203,7 +4205,8 @@
       "title": "Bağlantı modları nasıl farklılık gösterir?",
       "direct": "Doğrudan: CC Switch isteklerinize müdahale etmez; istemci, seçtiğiniz sağlayıcıyla kendi yerel özelliklerini kullanarak doğrudan iletişim kurar.",
       "route": "Yönlendirme: İstekler bu bilgisayardaki CC Switch üzerinden geçer; anında sağlayıcı değiştirme, yedek sağlayıcıya geçiş, biçim dönüştürme ve diğer gelişmiş özellikleri kullanabilirsiniz.",
-      "stack": "Birleştirme: Farklı sağlayıcıların modelleri /model içinde birlikte listelenir; istemci içinde modeller arasında kesintisiz geçiş yapabilirsiniz."
+      "stack": "Birleştirme: Farklı sağlayıcıların modelleri /model içinde birlikte listelenir; istemci içinde modeller arasında kesintisiz geçiş yapabilirsiniz.",
+      "matrix": "Route Matrix: select multiple main-route accounts and switch manually; secondary routes have independent model prefixes and failover."
     }
   },
   "providerCard": {

@@ -36,12 +36,12 @@ const CLIENT_FILE: Partial<Record<AppId, string>> = {
 };
 
 export type ModeDialogState =
-  | { kind: "enter"; target: Exclude<AppMode, "direct"> }
+  | { kind: "enter"; target: Exclude<AppMode, "direct" | "matrix"> }
   /** 回到直连；`useProviderId` 不为空时回到直连后改用这家 */
   | { kind: "exit"; useProviderId?: string }
   | { kind: "needsRoute"; providerId: string; reason: string };
 
-const MODE_LABEL: Record<Exclude<AppMode, "direct">, string> = {
+const MODE_LABEL: Record<Exclude<AppMode, "direct" | "matrix">, string> = {
   route: "路由",
   stack: "聚合",
 };
@@ -81,7 +81,7 @@ interface ModeDialogProps {
   onClose: () => void;
   /** `subagent`：进入聚合时框里的子代理设置（没改过也传，由调用方比对后保存） */
   onEnter: (
-    target: Exclude<AppMode, "direct">,
+    target: Exclude<AppMode, "direct" | "matrix">,
     pick: string,
     subagent?: StackSubagentValue,
   ) => Promise<void>;

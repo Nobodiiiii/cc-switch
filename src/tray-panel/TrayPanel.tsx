@@ -177,6 +177,7 @@ const MODE_TEXT: Record<AppMode, string> = {
   direct: "text-direct-text",
   route: "text-route-text",
   stack: "text-stack-text",
+  matrix: "text-stack-text",
 };
 
 function AppRow({

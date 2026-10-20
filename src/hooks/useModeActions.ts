@@ -32,6 +32,7 @@ export function useModeActions(app: AppId) {
       queryClient.invalidateQueries({ queryKey: proxyKeys.status }),
       queryClient.invalidateQueries({ queryKey: proxyKeys.takeoverStatus }),
       queryClient.invalidateQueries({ queryKey: ["providers", app] }),
+      queryClient.invalidateQueries({ queryKey: ["route-matrix"] }),
     ]);
     providersApi.updateTrayMenu().catch(() => undefined);
   }, [app, queryClient]);
@@ -39,7 +40,7 @@ export function useModeActions(app: AppId) {
   /** 进入路由 / 聚合模式；已经在另一种代理模式时后端一次写完，不经过直连。抛出错误给确认框显示。 */
   const enter = useCallback(
     async (
-      mode: Exclude<AppMode, "direct">,
+      mode: Exclude<AppMode, "direct" | "matrix">,
       route: string | null,
       routeName?: string,
     ) => {

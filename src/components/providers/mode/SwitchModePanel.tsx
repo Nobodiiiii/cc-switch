@@ -88,7 +88,11 @@ interface SwitchModePanelProps extends ListCallbacks {
 
 /** Gemini CLI、Grok Build、Claude Desktop 没有聚合模式（Q6）：那一格隐藏，前两格位置不变。 */
 const modesFor = (app: ModeAppId): AppMode[] =>
-  isStackAppId(app) ? ["direct", "route", "stack"] : ["direct", "route"];
+  app === "codex"
+    ? ["direct", "route", "stack", "matrix"]
+    : isStackAppId(app)
+      ? ["direct", "route", "stack"]
+      : ["direct", "route"];
 
 /**
  * 切换式应用的供应商页（v7 S1–S3）：模式行 → 通知槽 → 按查看的模式分区的列表。
@@ -298,14 +302,19 @@ export function SwitchModePanel({
               lead: t("mode.status.routeLead"),
               value: `→ ${routeTarget}`,
             }
-          : {
-              lead: t("mode.status.stackLead"),
-              value: t("mode.status.stackValue", {
-                name: nameOf(routeId),
-                count: otherMembers.length,
-                models: otherModels,
-              }),
-            };
+          : active === "matrix"
+            ? {
+                lead: "主路由 + 独立副路由",
+                value: "手动切换账号",
+              }
+            : {
+                lead: t("mode.status.stackLead"),
+                value: t("mode.status.stackValue", {
+                  name: nameOf(routeId),
+                  count: otherMembers.length,
+                  models: otherModels,
+                }),
+              };
 
   const handleFailoverChange = (enabled: boolean) => {
     if (enabled && !settings?.failoverConfirmed) {
@@ -334,7 +343,7 @@ export function SwitchModePanel({
   };
 
   const enterMode = async (
-    target: Exclude<AppMode, "direct">,
+    target: Exclude<AppMode, "direct" | "matrix">,
     pick: string,
     subagent?: StackSubagentValue,
   ) => {
@@ -499,7 +508,7 @@ export function SwitchModePanel({
       />,
     );
   }
-  if (view !== active) {
+  if (view !== active && view !== "matrix") {
     const cta =
       view === "route"
         ? t("mode.activate.route")
@@ -537,7 +546,6 @@ export function SwitchModePanel({
 
   return (
     <>
-      {app === "codex" && <RouteMatrixPanel providers={providers} />}
       <ModeTabs
         modes={modes}
         active={active}
@@ -575,16 +583,20 @@ export function SwitchModePanel({
             {notices}
           </div>
         )}
-        <ProviderList
-          {...listCallbacks}
-          providers={providers}
-          currentProviderId={currentProviderId}
-          appId={app}
-          isLoading={isLoading}
-          onSwitch={(provider) => void onSwitch(provider)}
-          switchMode={switchMode}
-          searchSlot={searchSlot}
-        />
+        {view === "matrix" && app === "codex" ? (
+          <RouteMatrixPanel providers={providers} />
+        ) : (
+          <ProviderList
+            {...listCallbacks}
+            providers={providers}
+            currentProviderId={currentProviderId}
+            appId={app}
+            isLoading={isLoading}
+            onSwitch={(provider) => void onSwitch(provider)}
+            switchMode={switchMode}
+            searchSlot={searchSlot}
+          />
+        )}
       </div>
 
       <ModeDialog

@@ -72,6 +72,12 @@ pub fn provider_in_use(db: &Database, app: &AppType) -> Result<Option<Provider>,
 /// 代理模式下代理路由那一行；不在代理模式、或者路由那家在库里不存在（按直连处理）时
 /// 为 `None`。
 fn proxy_route_row(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
+    if matches!(app, AppType::Codex) {
+        let matrix = crate::route_matrix::load(db).map_err(|e| AppError::Message(e.to_string()))?;
+        if matrix.enabled {
+            return db.get_provider_by_id(&matrix.primary.active_provider_id, app.as_str());
+        }
+    }
     let mode = mode_state(app);
     if !mode.is_proxy() {
         return Ok(None);

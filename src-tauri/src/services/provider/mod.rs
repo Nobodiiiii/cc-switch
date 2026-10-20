@@ -5687,7 +5687,7 @@ impl ProviderService {
             &app_type,
             crate::mode::current::Purpose::Direct,
         )?;
-        if current.is_some() {
+        if current.is_some() || crate::route_matrix::is_enabled(&state.db)? {
             state.db.save_provider(app_type.as_str(), &provider)?;
             return Ok(true);
         }
@@ -5902,7 +5902,8 @@ impl ProviderService {
         }
 
         let mode = crate::mode::current::mode_state(&app_type);
-        let key_fields = kind.writes_key_fields(state, &app_type, &mode, &provider.id)?;
+        let key_fields = !crate::route_matrix::is_enabled(&state.db)?
+            && kind.writes_key_fields(state, &app_type, &mode, &provider.id)?;
 
         state.db.save_provider(app_type.as_str(), &provider)?;
         let written = if key_fields {
@@ -6354,6 +6355,10 @@ impl ProviderService {
         is_direct_current: bool,
     ) -> Result<bool, AppError> {
         let app_type = AppType::Codex;
+        if crate::route_matrix::is_enabled(&state.db)? {
+            state.db.save_provider(app_type.as_str(), provider)?;
+            return Ok(true);
+        }
         let mode = crate::mode::current::mode_state(&app_type);
         if !mode.is_proxy() && !is_direct_current {
             state.db.save_provider(app_type.as_str(), provider)?;
@@ -6608,6 +6613,11 @@ impl ProviderService {
         // 失败后重试也按补完后的指针删上一家的独有字段。
         let _switch_guard = crate::mode::controller::lock_settled_blocking(state, &app_type)?;
 
+        if matches!(app_type, AppType::Codex) && crate::route_matrix::is_enabled(&state.db)? {
+            return Err(AppError::Message(
+                "当前为路由矩阵模式，请在主路由中切换账号，或先切换到直连模式".into(),
+            ));
+        }
         if crate::mode::current::is_proxy(&app_type) {
             // 代理模式：只换代理路由，直连指针不变。契约没变时客户端文件不读也不写；
             // 变了在同一个操作里先改写客户端，再发布路由。

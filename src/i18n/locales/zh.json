@@ -4137,7 +4137,8 @@
     "settingsHasUpdate": "设置 · CC Switch 有新版本",
     "mode": {
       "route": "路由",
-      "stack": "聚合"
+      "stack": "聚合",
+      "matrix": "路由矩阵"
     },
     "needsAttention": "需要处理",
     "back": "返回"
@@ -4196,7 +4197,8 @@
     "names": {
       "direct": "直连",
       "route": "路由",
-      "stack": "聚合"
+      "stack": "聚合",
+      "matrix": "路由矩阵"
     },
     "active": "生效中",
     "activeTitle": "{{mode}}生效中",
@@ -4300,7 +4302,8 @@
       "title": "连接模式的区别",
       "direct": "直连：CC Switch 不经手任何请求，客户端直接连所选供应商，体验最原生。",
       "route": "路由：请求经本机 CC Switch 转发，可热切换供应商，并支持故障转移、格式转换等高级功能。",
-      "stack": "聚合：多家供应商的模型同列在 /model，在客户端内即可无感切换。"
+      "stack": "聚合：多家供应商的模型同列在 /model，在客户端内即可无感切换。",
+      "matrix": "路由矩阵：主路由可选多个官方供应商，手动切换；副路由各自使用模型前缀和故障转移。"
     }
   },
   "providerCard": {

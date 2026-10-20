@@ -8,6 +8,7 @@ import {
 import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestQueryClient } from "../utils/testQueryClient";
+import type { Provider } from "@/types";
 import { RouteMatrixPanel } from "@/components/route-matrix/RouteMatrixPanel";
 import {
   matrixPolicy,
@@ -23,9 +24,29 @@ vi.mock("@/lib/api/routeMatrix", async (importOriginal) => {
     routeMatrixApi: { get: vi.fn(), save: vi.fn(), connect: vi.fn() },
   };
 });
-const providers = {
-  a: { id: "a", name: "账号 A", settingsConfig: {} },
-  b: { id: "b", name: "账号 B", settingsConfig: {} },
+const official = (id: string): Provider => ({
+  id,
+  name: `账号 ${id.toUpperCase()}`,
+  category: "official",
+  settingsConfig: { auth: {}, config: "" },
+  meta: {
+    authBinding: {
+      source: "managed_account",
+      authProvider: "codex_oauth",
+      accountId: `account-${id}`,
+    },
+  },
+});
+const providers: Record<string, Provider> = {
+  a: official("a"),
+  b: official("b"),
+  c: official("c"),
+  unbound: {
+    id: "unbound",
+    name: "未绑定官方账号",
+    category: "official",
+    settingsConfig: { auth: {}, config: "" },
+  },
 };
 let config: MatrixConfig;
 beforeEach(() => {
@@ -66,10 +87,46 @@ async function open() {
       <RouteMatrixPanel providers={providers} />
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "配置连接" }));
   await screen.findByRole("region", { name: "主路由" });
 }
 describe("Route Matrix", () => {
+  it("selects multiple official members and creates same-name mappings for their models", async () => {
+    await open();
+    expect(screen.getByLabelText("加入主路由：账号 A")).toBeChecked();
+    expect(screen.getByLabelText("加入主路由：账号 B")).toBeChecked();
+    expect(screen.getByLabelText("加入主路由：未绑定官方账号")).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("加入主路由：账号 C"));
+    fireEvent.change(screen.getByLabelText("当前供应商"), {
+      target: { value: "c" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加模型" }));
+    fireEvent.change(screen.getAllByLabelText("发布模型 ID")[1], {
+      target: { value: "gpt-other" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(routeMatrixApi.save).toHaveBeenCalled());
+    expect(config.primary.providerIds).toEqual(["a", "b", "c"]);
+    expect(config.primary.activeProviderId).toBe("c");
+    expect(config.primary.models[0].targets[2]).toEqual({
+      providerId: "c",
+      model: "gpt-test",
+    });
+    expect(config.primary.models[1].targets).toEqual(
+      ["a", "b", "c"].map((providerId) => ({ providerId, model: "gpt-other" })),
+    );
+    expect(routeMatrixApi.connect).not.toHaveBeenCalled();
+  });
+  it("removes a member and its mappings while retaining the other official accounts", async () => {
+    await open();
+    fireEvent.click(screen.getByLabelText("加入主路由：账号 A"));
+    expect(screen.getByLabelText("当前供应商")).toHaveValue("b");
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(routeMatrixApi.save).toHaveBeenCalled());
+    expect(config.primary.providerIds).toEqual(["b"]);
+    expect(config.primary.models[0].targets).toEqual([
+      { providerId: "b", model: "actual-b" },
+    ]);
+  });
   it("saves manual account switching without reconnecting Codex", async () => {
     await open();
     fireEvent.change(screen.getByLabelText("当前供应商"), {
@@ -106,7 +163,9 @@ describe("Route Matrix", () => {
   it("does not change the connection when saving fails", async () => {
     vi.mocked(routeMatrixApi.save).mockRejectedValueOnce("模型映射不完整");
     await open();
-    fireEvent.click(screen.getByRole("button", { name: "保存并接入 Codex" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "保存并切换到路由矩阵" }),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "模型映射不完整",
     );

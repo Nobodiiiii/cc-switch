@@ -113,6 +113,51 @@ beforeEach(() => {
 });
 
 describe("SwitchModePanel — Stack mode", () => {
+  it("offers Route Matrix beside direct, route and stack without activating on tab selection", async () => {
+    mockMode("direct", "a");
+    let connections = 0;
+    server.use(
+      http.post(`${TAURI_ENDPOINT}/connect_route_matrix`, () => {
+        connections++;
+        return HttpResponse.json(null);
+      }),
+    );
+    renderPanel("codex", { a: provider("a") });
+    for (const mode of ["direct", "route", "stack", "matrix"]) {
+      expect(
+        await screen.findByRole("button", {
+          name: new RegExp(`mode.names.${mode}`),
+        }),
+      ).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "mode.names.matrix" }));
+    expect(
+      await screen.findByRole("region", { name: "主路由" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("card-a")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "保存并切换到路由矩阵" }),
+    ).toBeInTheDocument();
+    expect(connections).toBe(0);
+  });
+  it("opens the matrix configuration when the backend reports it as the active mode", async () => {
+    mockMode("matrix", "a");
+    renderPanel("codex", { a: provider("a") });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /mode.names.matrix/ }),
+      ).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(
+      await screen.findByRole("region", { name: "主路由" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("card-a")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "mode.names.direct" }));
+    expect(await screen.findByTestId("card-a")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "主路由" }),
+    ).not.toBeInTheDocument();
+  });
   it("opens the Codex aggregation settings from the Stack tab only", async () => {
     const user = userEvent.setup();
     mockMode("stack", "route");

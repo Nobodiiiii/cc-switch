@@ -1094,6 +1094,7 @@ enum TrayMode {
     /// 路由 + 自动故障转移：子菜单只读（#6022）。
     Failover,
     Stack,
+    Matrix,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1143,7 +1144,7 @@ impl AppSnapshot {
     /// 这个应用现在靠路由服务：路由 / 聚合中。
     fn uses_service(&self) -> bool {
         match self.mode {
-            TrayMode::Route | TrayMode::Failover | TrayMode::Stack => true,
+            TrayMode::Route | TrayMode::Failover | TrayMode::Stack | TrayMode::Matrix => true,
             TrayMode::Direct => false,
         }
     }
@@ -1214,6 +1215,11 @@ fn provider_entry(app: &AppType, provider: &Provider) -> ProviderEntry {
 }
 
 fn tray_mode(app_state: &AppState, app: &AppType) -> TrayMode {
+    if matches!(app, AppType::Codex)
+        && crate::route_matrix::is_enabled(&app_state.db).unwrap_or(false)
+    {
+        return TrayMode::Matrix;
+    }
     if !crate::mode::current::is_proxy(app) {
         return TrayMode::Direct;
     }
@@ -1651,6 +1657,7 @@ fn app_row_title(texts: &TrayTexts, snapshot: &AppSnapshot) -> String {
     let mut parts: Vec<String> = vec![app_display_name(&snapshot.app).to_string()];
     let current = snapshot.current();
     let mode_word = match snapshot.mode {
+        TrayMode::Matrix => Some("Route Matrix"),
         TrayMode::Route | TrayMode::Failover => Some(texts.mode_route),
         TrayMode::Stack => Some(texts.mode_stack),
         TrayMode::Direct => None,
@@ -1706,6 +1713,11 @@ fn provider_rows(texts: &TrayTexts, snapshot: &AppSnapshot) -> Vec<TrayEntry> {
     let current = snapshot.current_id.as_deref();
     let is_current = |p: &ProviderEntry| current == Some(p.id.as_str());
     match snapshot.mode {
+        TrayMode::Matrix => snapshot
+            .current()
+            .map(|p| TrayEntry::check(provider_id_for(app, &p.id), p.name.clone(), false, true))
+            .into_iter()
+            .collect(),
         TrayMode::Direct => {
             let listed: Vec<&ProviderEntry> = snapshot.providers.iter().collect();
             let names = display_names(&listed);
@@ -1803,6 +1815,7 @@ fn app_children(
     let mut children = Vec::new();
 
     let header = match snapshot.mode {
+        TrayMode::Matrix => Some("Route Matrix".to_string()),
         TrayMode::Direct => Some(texts.header_direct.to_string()),
         TrayMode::Route => Some(texts.header_route.to_string()),
         TrayMode::Failover => Some(texts.header_failover.to_string()),
@@ -2278,11 +2291,13 @@ pub(crate) fn collect_panel_model(app_state: &AppState) -> Result<PanelModel, Ap
             name: app_display_name(&snapshot.app),
             current: snapshot.current().map(|p| p.name.clone()),
             mode: match snapshot.mode {
+                TrayMode::Matrix => "Route Matrix",
                 TrayMode::Direct => texts.header_direct,
                 TrayMode::Route | TrayMode::Failover => texts.mode_route,
                 TrayMode::Stack => texts.mode_stack,
             },
             mode_kind: match snapshot.mode {
+                TrayMode::Matrix => "matrix",
                 TrayMode::Direct => "direct",
                 TrayMode::Route | TrayMode::Failover => "route",
                 TrayMode::Stack => "stack",
@@ -2958,7 +2973,7 @@ fn handle_provider_click(
         return Ok(ClickOutcome::Unchanged);
     }
     let mode = tray_mode(state, app_type);
-    if mode == TrayMode::Failover {
+    if matches!(mode, TrayMode::Failover | TrayMode::Matrix) {
         log::info!(
             "{} 的故障转移开着，托盘只读，不切换",
             app_display_name(app_type)

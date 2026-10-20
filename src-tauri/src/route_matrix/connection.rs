@@ -171,6 +171,10 @@ pub async fn connect(state: &AppState, enabled: bool) -> Result<(), String> {
     let was_enabled = config.enabled;
     let path = crate::codex_config::get_codex_config_path();
     if !enabled {
+        let _client_guard =
+            crate::mode::controller::lock_settled(state, &crate::app_config::AppType::Codex)
+                .await
+                .map_err(|e| e.to_string())?;
         let backup = state
             .db
             .get_setting(BACKUP_KEY)
@@ -199,8 +203,12 @@ pub async fn connect(state: &AppState, enabled: bool) -> Result<(), String> {
     )?;
     // Let upstream restore its managed connection before installing ours.
     if state.proxy_service.get_takeover_status().await?.codex {
-        crate::mode::controller::exit(state, &crate::app_config::AppType::Codex).await?;
+        crate::mode::controller::exit_for_matrix(state, &crate::app_config::AppType::Codex).await?;
     }
+    let _client_guard =
+        crate::mode::controller::lock_settled(state, &crate::app_config::AppType::Codex)
+            .await
+            .map_err(|e| e.to_string())?;
     let info = state.proxy_service.start().await?;
     let token = state
         .db

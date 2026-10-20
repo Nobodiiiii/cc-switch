@@ -183,6 +183,62 @@ fn breakers_are_route_local_and_configuration_changes_take_effect() {
 }
 
 #[test]
+fn multiple_official_members_are_selected_manually_and_validated_as_a_group() {
+    use crate::provider::{AuthBinding, AuthBindingSource, ProviderMeta};
+    let (mut config, mut all) = fixture();
+    for id in ["official-a", "official-b"] {
+        let mut row =
+            Provider::with_id(id.into(), id.into(), json!({"auth":{}, "config":""}), None);
+        row.category = Some("official".into());
+        row.meta = Some(ProviderMeta {
+            auth_binding: Some(AuthBinding {
+                source: AuthBindingSource::ManagedAccount,
+                auth_provider: Some("codex_oauth".into()),
+                account_id: Some(format!("account-{id}")),
+            }),
+            ..Default::default()
+        });
+        all.insert(id.into(), row);
+    }
+    config.primary.provider_ids = vec!["official-a".into(), "official-b".into()];
+    config.primary.active_provider_id = "official-a".into();
+    config.primary.models[0].targets = config
+        .primary
+        .provider_ids
+        .iter()
+        .map(|id| Target {
+            provider_id: id.clone(),
+            model: "native-model".into(),
+        })
+        .collect();
+    config.validate(&all).unwrap();
+    let runtime = Arc::new(Runtime::default());
+    let old = config.resolve("gpt-test", &all, runtime.clone()).unwrap();
+    old.record("official-a", false);
+    assert_eq!(old.targets.len(), 1, "main route never rotates accounts");
+    config.primary.active_provider_id = "official-b".into();
+    let new = config.resolve("gpt-test", &all, runtime).unwrap();
+    assert_eq!(
+        old.targets[0].provider_id, "official-a",
+        "in-flight snapshot retained"
+    );
+    assert_eq!(new.targets[0].provider_id, "official-b");
+    assert_eq!(config.secondary[0].active_provider_id, "a");
+    config.primary.provider_ids.remove(0);
+    assert!(
+        config.validate(&all).is_err(),
+        "mapping outside membership rejected"
+    );
+    config.primary.models.clear();
+    config.enabled = false;
+    all.get_mut("official-b").unwrap().meta = None;
+    assert!(
+        config.validate(&all).is_err(),
+        "even unused members need a concrete account"
+    );
+}
+
+#[test]
 fn validation_rejects_ambiguous_or_unsafe_configuration() {
     let (config, all) = fixture();
     let mut bad = config.clone();

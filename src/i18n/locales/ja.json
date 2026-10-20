@@ -4137,7 +4137,8 @@
     "settingsHasUpdate": "設定 · CC Switch の新しいバージョンがあります",
     "mode": {
       "route": "ルーティング",
-      "stack": "集約"
+      "stack": "集約",
+      "matrix": "ルートマトリクス"
     },
     "needsAttention": "対応が必要",
     "back": "戻る"
@@ -4196,7 +4197,8 @@
     "names": {
       "direct": "直接接続",
       "route": "ルーティング",
-      "stack": "集約"
+      "stack": "集約",
+      "matrix": "ルートマトリクス"
     },
     "active": "有効",
     "activeTitle": "{{mode}}が有効",
@@ -4300,7 +4302,8 @@
       "title": "接続モードの違い",
       "direct": "直接接続：CC Switch はリクエストに一切関与せず、クライアントが選んだプロバイダーに直接つながる、最もネイティブな使い方です。",
       "route": "ルーティング：リクエストはこのマシンの CC Switch を経由し、プロバイダーのホットスイッチ、フェイルオーバー、フォーマット変換などの高度な機能が使えます。",
-      "stack": "集約：複数のプロバイダーのモデルが /model に並び、クライアント内でシームレスに切り替えられます。"
+      "stack": "集約：複数のプロバイダーのモデルが /model に並び、クライアント内でシームレスに切り替えられます。",
+      "matrix": "Route Matrix: select multiple main-route accounts and switch manually; secondary routes have independent model prefixes and failover."
     }
   },
   "providerCard": {

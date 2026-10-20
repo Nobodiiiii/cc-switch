@@ -721,7 +721,25 @@ pub async fn enter_with_route(
     stack_mode: bool,
     route: Option<&str>,
 ) -> Result<(), String> {
-    let result = try_enter_with_route(state, app, stack_mode, route).await;
+    let _matrix_guard = if matches!(app, AppType::Codex) {
+        Some(crate::route_matrix::WRITE_LOCK.lock().await)
+    } else {
+        None
+    };
+    let matrix_was_enabled =
+        matches!(app, AppType::Codex) && crate::route_matrix::load(&state.db).map_err(err)?.enabled;
+    if matrix_was_enabled {
+        crate::route_matrix::connect(state, false).await?;
+    }
+    let mut result = try_enter_with_route(state, app, stack_mode, route).await;
+    if matrix_was_enabled && result.is_err() {
+        if let Err(restore) = crate::route_matrix::connect(state, true).await {
+            result = Err(format!(
+                "{}; 恢复路由矩阵失败: {restore}",
+                result.unwrap_err()
+            ));
+        }
+    }
     if let Err(error) = &result {
         log::error!(
             "[MODE] {} 进入{}模式失败（路由目标 {}）: {}",
@@ -853,6 +871,19 @@ async fn warn_if_official_route(state: &AppState, app: &AppType, route: &Provide
 
 /// 退出代理模式：客户端写回直连指针的供应商，路由保留。
 pub async fn exit(state: &AppState, app: &AppType) -> Result<(), String> {
+    let _matrix_guard = if matches!(app, AppType::Codex) {
+        Some(crate::route_matrix::WRITE_LOCK.lock().await)
+    } else {
+        None
+    };
+    if matches!(app, AppType::Codex) && crate::route_matrix::load(&state.db).map_err(err)?.enabled {
+        crate::route_matrix::connect(state, false).await?;
+    }
+    exit_for_matrix(state, app).await
+}
+
+/// Upstream exit only; matrix connection already holds the outer lifecycle lock.
+pub(crate) async fn exit_for_matrix(state: &AppState, app: &AppType) -> Result<(), String> {
     require_proxy_app(app)?;
     {
         let _guard = lock_settled(state, app).await.map_err(|e| e.to_string())?;
@@ -1865,7 +1896,7 @@ pub fn direct_provider_id(state: &AppState, app: &AppType) -> Result<Option<Stri
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppModeView {
-    /// `direct` / `route` / `stack`
+    /// `direct` / `route` / `stack` / `matrix`
     pub mode: &'static str,
     /// 客户端文件指着代理（CC Switch 运行时为真；退出时分离）
     pub attached: bool,
@@ -1875,6 +1906,17 @@ pub struct AppModeView {
 
 pub fn app_mode_view(state: &AppState, app: &AppType) -> Result<AppModeView, String> {
     require_proxy_app(app)?;
+    if matches!(app, AppType::Codex) {
+        let matrix = crate::route_matrix::load(&state.db).map_err(err)?;
+        if matrix.enabled {
+            return Ok(AppModeView {
+                mode: "matrix",
+                attached: true,
+                route_provider_id: Some(matrix.primary.active_provider_id),
+                direct_provider_id: direct_provider_id(state, app).map_err(err)?,
+            });
+        }
+    }
     let mode = current::mode_state(app);
     let name = if !mode.is_proxy() {
         "direct"
@@ -2592,6 +2634,94 @@ mod mode_tests {
         .await
         .expect("ephemeral port");
         AppState::new(db)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn route_matrix_mode_is_exclusive_and_provider_edits_preserve_its_connection() {
+        use crate::route_matrix::{self, MatrixConfig, Model, Route, Target};
+        let _home = Home::new();
+        seed_codex("model = \"before-matrix\"\n", None);
+        let rows = codex_a_b();
+        let state = state_with(AppType::Codex, &rows, "a").await;
+        let config = MatrixConfig {
+            version: 1,
+            enabled: false,
+            primary: Route {
+                id: "main".into(),
+                name: "Main".into(),
+                provider_ids: vec!["a".into(), "b".into()],
+                active_provider_id: "a".into(),
+                models: vec![Model {
+                    id: "gpt-test".into(),
+                    active_provider_id: None,
+                    targets: vec![
+                        Target {
+                            provider_id: "a".into(),
+                            model: "actual-a".into(),
+                        },
+                        Target {
+                            provider_id: "b".into(),
+                            model: "actual-b".into(),
+                        },
+                    ],
+                    catalog: Default::default(),
+                }],
+                ..Route::default()
+            },
+            secondary: vec![],
+        };
+        route_matrix::save(&state.db, &config).unwrap();
+        route_matrix::connect(&state, true).await.unwrap();
+        assert_eq!(
+            app_mode_view(&state, &AppType::Codex).unwrap().mode,
+            "matrix"
+        );
+        let connected = codex_text();
+        assert!(connected.contains("cc_switch_matrix"));
+        assert!(
+            enter_with_route(&state, &AppType::Codex, false, Some("missing"))
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            app_mode_view(&state, &AppType::Codex).unwrap().mode,
+            "matrix",
+            "failed transition restores the active mode"
+        );
+        assert!(ProviderService::switch(&state, AppType::Codex, "b").is_err());
+        let mut edited = rows[0].clone();
+        edited.name = "Edited while matrix active".into();
+        ProviderService::update(&state, AppType::Codex, None, edited).unwrap();
+        assert_eq!(
+            codex_text(),
+            connected,
+            "editing a member must not replace matrix config"
+        );
+        exit(&state, &AppType::Codex).await.unwrap();
+        assert!(!route_matrix::load(&state.db).unwrap().enabled);
+        assert_eq!(
+            app_mode_view(&state, &AppType::Codex).unwrap().mode,
+            "direct"
+        );
+        for (stack, expected) in [(false, "route"), (true, "stack")] {
+            route_matrix::connect(&state, true).await.unwrap();
+            enter_with_route(&state, &AppType::Codex, stack, Some("b"))
+                .await
+                .unwrap();
+            assert!(!route_matrix::load(&state.db).unwrap().enabled);
+            assert_eq!(
+                app_mode_view(&state, &AppType::Codex).unwrap().mode,
+                expected
+            );
+            assert!(!codex_text().contains("model_provider = \"cc_switch_matrix\""));
+        }
+        route_matrix::connect(&state, true).await.unwrap();
+        assert_eq!(
+            app_mode_view(&state, &AppType::Codex).unwrap().mode,
+            "matrix"
+        );
+        exit(&state, &AppType::Codex).await.unwrap();
     }
 
     fn settings_path() -> std::path::PathBuf {

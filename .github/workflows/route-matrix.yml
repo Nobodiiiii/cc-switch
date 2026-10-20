@@ -51,6 +51,8 @@ jobs:
       - name: Backend compile and HTTP integration tests
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix:: -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix_mode_ -- --test-threads=1
       - name: Build portable Windows preview
         run: pnpm tauri build --debug --no-bundle
       - uses: actions/upload-artifact@v7

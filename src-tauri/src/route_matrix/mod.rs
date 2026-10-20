@@ -33,6 +33,9 @@ pub struct Route {
     pub name: String,
     /// Empty only on the primary route. Namespace ownership is permanent.
     pub prefix: String,
+    /// Explicit route members; empty in legacy configurations derived from mappings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_ids: Vec<String>,
     pub active_provider_id: String,
     pub failover: bool,
     pub policy: Policy,
@@ -86,6 +89,23 @@ fn invalid(message: impl Into<String>) -> ProxyError {
     ProxyError::ConfigError(message.into())
 }
 
+fn validate_account(provider: &Provider) -> Result<(), String> {
+    if crate::proxy::providers::is_codex_official_provider(provider)
+        && provider
+            .meta
+            .as_ref()
+            .and_then(|m| m.managed_account_id_for("codex_oauth"))
+            .filter(|id| !id.trim().is_empty())
+            .is_none()
+    {
+        return Err(format!(
+            "官方供应商 {} 必须绑定 CC Switch 中的具体 ChatGPT 账号，才能热切换",
+            provider.name
+        ));
+    }
+    Ok(())
+}
+
 pub fn load(db: &Database) -> Result<MatrixConfig, ProxyError> {
     match db
         .get_setting(CONFIG_KEY)
@@ -104,6 +124,13 @@ pub fn load(db: &Database) -> Result<MatrixConfig, ProxyError> {
             ..MatrixConfig::default()
         }),
     }
+}
+
+/// Whether this independent mode owns the Codex client connection.
+pub fn is_enabled(db: &Database) -> Result<bool, crate::error::AppError> {
+    load(db)
+        .map(|config| config.enabled)
+        .map_err(|error| crate::error::AppError::Message(error.to_string()))
 }
 
 impl MatrixConfig {
@@ -150,6 +177,19 @@ impl MatrixConfig {
                 return Err("重试上限为 20，失败阈值至少为 1，超时和冷却上限为 86400 秒".into());
             }
             let mut model_ids = HashSet::new();
+            let mut members = HashSet::new();
+            for id in &route.provider_ids {
+                if !members.insert(id) {
+                    return Err("主路由供应商不能重复".into());
+                }
+                let provider = providers
+                    .get(id)
+                    .ok_or_else(|| format!("供应商不存在: {id}"))?;
+                validate_account(provider)?;
+            }
+            if !members.is_empty() && !members.contains(&route.active_provider_id) {
+                return Err("当前供应商必须在主路由勾选的供应商中".into());
+            }
             for model in &route.models {
                 if model.id.trim() != model.id
                     || model.id.is_empty()
@@ -167,25 +207,19 @@ impl MatrixConfig {
                     return Err(format!("模型 {} 没有上游", model.id));
                 }
                 for target in &model.targets {
+                    if !members.is_empty() && !members.contains(&target.provider_id) {
+                        return Err(format!(
+                            "模型 {} 引用了未加入路由的供应商 {}",
+                            model.id, target.provider_id
+                        ));
+                    }
                     let provider = providers
                         .get(&target.provider_id)
                         .ok_or_else(|| format!("供应商不存在: {}", target.provider_id))?;
                     if target.model.trim().is_empty() || !target_ids.insert(&target.provider_id) {
                         return Err("上游模型不能为空，同一模型不能重复添加供应商".into());
                     }
-                    if crate::proxy::providers::is_codex_official_provider(provider)
-                        && provider
-                            .meta
-                            .as_ref()
-                            .and_then(|m| m.managed_account_id_for("codex_oauth"))
-                            .filter(|id| !id.trim().is_empty())
-                            .is_none()
-                    {
-                        return Err(format!(
-                            "官方供应商 {} 必须绑定 CC Switch 中的具体 ChatGPT 账号，才能热切换",
-                            provider.name
-                        ));
-                    }
+                    validate_account(provider)?;
                 }
                 let active = model
                     .active_provider_id

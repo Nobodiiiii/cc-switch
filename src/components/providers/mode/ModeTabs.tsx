@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Layers, Plug, Route, Settings2, Shuffle } from "lucide-react";
+import { Layers, Plug, Route, Settings2, Shuffle, Network } from "lucide-react";
 import type { AppMode } from "@/types/proxy";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -11,13 +11,24 @@ import {
 } from "@/components/ui/sliding-indicator";
 import { cn } from "@/lib/utils";
 
-const MODE_ICON = { direct: Plug, route: Route, stack: Layers } as const;
+const MODE_ICON = {
+  direct: Plug,
+  route: Route,
+  stack: Layers,
+  matrix: Network,
+} as const;
 
 /** 模式色只用在 tab、侧栏标签、当前卡片和激活条的 CTA 上（B4.7）。 */
 export const MODE_TONE: Record<
   AppMode,
   { soft: string; text: string; dot: string; border: string }
 > = {
+  matrix: {
+    soft: "bg-stack-soft",
+    text: "text-stack-text",
+    dot: "bg-stack",
+    border: "border-stack",
+  },
   direct: {
     soft: "bg-direct-soft",
     text: "text-direct-text",
