@@ -10,7 +10,6 @@ use toml_edit::{value, DocumentMut, Item, Table};
 
 const TOKEN_KEY: &str = "route_matrix_connection_token_v1";
 const BACKUP_KEY: &str = "route_matrix_client_backup_v1";
-const INSTALLED_KEY: &str = "route_matrix_client_installed_v1";
 const PREFIX_KEY: &str = "route_matrix_prefix_owners_v1";
 pub static WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -99,6 +98,20 @@ pub fn client_config(
     if doc.get("model_providers").is_none() {
         doc["model_providers"] = Item::Table(Table::new());
     }
+    if doc
+        .get("model_providers")
+        .and_then(Item::as_table_like)
+        .is_none()
+    {
+        return Err("Codex model_providers 必须是 TOML 表".into());
+    }
+    if doc.get("features").is_none() {
+        doc["features"] = Item::Table(Table::new());
+    }
+    if doc.get("features").and_then(Item::as_table_like).is_none() {
+        return Err("Codex features 必须是 TOML 表".into());
+    }
+    doc["features"]["api_key_model_discovery"] = value(true);
     let mut provider = Table::new();
     provider["name"] = value("CC Switch · Route Matrix");
     provider["base_url"] = value(format!("{origin}/route-matrix/v1"));
@@ -140,11 +153,22 @@ pub fn restore_client_config(current: &str, backup: &str) -> Result<String, Stri
             providers.remove("cc_switch_matrix");
         }
     }
+    if let Some(features) = doc.get_mut("features").and_then(Item::as_table_like_mut) {
+        if let Some(item) = before
+            .get("features")
+            .and_then(|f| f.get("api_key_model_discovery"))
+        {
+            features.insert("api_key_model_discovery", item.clone());
+        } else {
+            features.remove("api_key_model_discovery");
+        }
+    }
     Ok(doc.to_string())
 }
 
 pub async fn connect(state: &AppState, enabled: bool) -> Result<(), String> {
     let mut config = load(&state.db).map_err(|e| e.to_string())?;
+    let was_enabled = config.enabled;
     let path = crate::codex_config::get_codex_config_path();
     if !enabled {
         let backup = state
@@ -211,19 +235,12 @@ pub async fn connect(state: &AppState, enabled: bool) -> Result<(), String> {
     // Config is valid before any client file is changed. Runtime saves are one
     // settings-row replacement; in-flight requests retain their own snapshot.
     save(&state.db, &config)?;
-    state
-        .db
-        .set_setting(INSTALLED_KEY, &next)
-        .map_err(|e| e.to_string())?;
     if let Err(error) = crate::config::write_text_file_private(&path, &next) {
-        config.enabled = false;
+        config.enabled = was_enabled;
         let _ = save(&state.db, &config);
         return Err(error.to_string());
     }
-    state
-        .db
-        .set_setting(INSTALLED_KEY, &next)
-        .map_err(|e| e.to_string())
+    Ok(())
 }
 
 pub async fn startup(state: &AppState) {

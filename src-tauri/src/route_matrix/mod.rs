@@ -272,7 +272,23 @@ impl MatrixConfig {
             .collect();
         // Deleted providers fail closed. Never silently select the next account.
         for target in &targets {
-            if !providers.contains_key(&target.provider_id) {
+            if let Some(provider) = providers.get(&target.provider_id) {
+                // Provider cards can be edited independently after matrix save.
+                // Do not silently use the OAuth manager's default account.
+                if crate::proxy::providers::is_codex_official_provider(provider)
+                    && provider
+                        .meta
+                        .as_ref()
+                        .and_then(|m| m.managed_account_id_for("codex_oauth"))
+                        .filter(|id| !id.trim().is_empty())
+                        .is_none()
+                {
+                    return Err(ProxyError::AuthError(format!(
+                        "官方供应商 {} 的账号绑定已失效",
+                        provider.name
+                    )));
+                }
+            } else {
                 return Err(invalid(format!(
                     "路由引用的供应商已删除: {}",
                     target.provider_id
@@ -280,8 +296,13 @@ impl MatrixConfig {
             }
         }
         let scope = serde_json::to_string(route).map_err(|e| invalid(e.to_string()))?;
+        let selected_providers = targets
+            .iter()
+            .filter_map(|t| providers.get(&t.provider_id).cloned())
+            .collect();
         Ok(Execution {
             targets,
+            selected_providers,
             policy: route.policy.clone(),
             failover: route.failover,
             scope,
@@ -321,6 +342,7 @@ struct Health {
 #[derive(Clone)]
 pub struct Execution {
     pub targets: Vec<Target>,
+    selected_providers: Vec<Provider>,
     pub policy: Policy,
     pub failover: bool,
     scope: String,
@@ -328,11 +350,8 @@ pub struct Execution {
 }
 
 impl Execution {
-    pub fn providers(&self, all: &indexmap::IndexMap<String, Provider>) -> Vec<Provider> {
-        self.targets
-            .iter()
-            .filter_map(|t| all.get(&t.provider_id).cloned())
-            .collect()
+    pub fn providers(&self) -> Vec<Provider> {
+        self.selected_providers.clone()
     }
     pub fn upstream(&self, id: &str) -> Option<&str> {
         self.targets
