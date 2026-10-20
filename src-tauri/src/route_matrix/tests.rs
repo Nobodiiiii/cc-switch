@@ -116,6 +116,44 @@ fn removed_unknown_and_malformed_models_never_fall_back() {
 }
 
 #[test]
+fn official_account_binding_is_required_at_save_and_at_request_time() {
+    use crate::provider::{AuthBinding, AuthBindingSource, ProviderMeta};
+    let (mut config, mut all) = fixture();
+    let mut official = Provider::with_id(
+        "official".into(),
+        "Official".into(),
+        json!({"auth":{}, "config":""}),
+        None,
+    );
+    official.category = Some("official".into());
+    config.primary.active_provider_id = "official".into();
+    config.primary.models[0].targets = vec![Target {
+        provider_id: "official".into(),
+        model: "native-model".into(),
+    }];
+    all.insert("official".into(), official.clone());
+    assert!(config.validate(&all).is_err());
+    official.meta = Some(ProviderMeta {
+        provider_type: Some("codex_oauth".into()),
+        auth_binding: Some(AuthBinding {
+            source: AuthBindingSource::ManagedAccount,
+            auth_provider: Some("codex_oauth".into()),
+            account_id: Some("account-a".into()),
+        }),
+        ..Default::default()
+    });
+    all.insert("official".into(), official.clone());
+    config.validate(&all).unwrap();
+    assert!(config.resolve("gpt-test", &all, Arc::default()).is_ok());
+    official.meta.as_mut().unwrap().auth_binding = None;
+    all.insert("official".into(), official);
+    assert!(matches!(
+        config.resolve("gpt-test", &all, Arc::default()),
+        Err(ProxyError::AuthError(_))
+    ));
+}
+
+#[test]
 fn breakers_are_route_local_and_configuration_changes_take_effect() {
     let (mut config, all) = fixture();
     let runtime = Arc::new(Runtime::default());

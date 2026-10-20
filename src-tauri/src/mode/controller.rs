@@ -954,6 +954,9 @@ fn write_direct_for_exit(
 
 /// 没有应用在代理模式（含 Claude Desktop 的路由模式）时，停掉代理服务。
 async fn stop_server_if_unused(state: &AppState) {
+    if crate::route_matrix::load(&state.db).is_ok_and(|config| config.enabled) {
+        return;
+    }
     if current::proxy_flags(PROXY_APPS).contains(&true) {
         return;
     }
@@ -966,6 +969,10 @@ async fn stop_server_if_unused(state: &AppState) {
 
 /// 「关闭本地路由」：全部退回直连，再停掉代理服务。
 pub async fn exit_all(state: &AppState) -> Result<(), String> {
+    let _matrix_guard = crate::route_matrix::WRITE_LOCK.lock().await;
+    if crate::route_matrix::load(&state.db).is_ok_and(|config| config.enabled) {
+        crate::route_matrix::connect(state, false).await?;
+    }
     let mut errors = Vec::new();
     for app in PROXY_APPS {
         let result = match lock_settled(state, &app).await {

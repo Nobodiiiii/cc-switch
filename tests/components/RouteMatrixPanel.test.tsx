@@ -112,4 +112,23 @@ describe("Route Matrix", () => {
     );
     expect(routeMatrixApi.connect).not.toHaveBeenCalled();
   });
+  it("can pin a primary model independently of the route selection", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText("此模型的供应商"), {
+      target: { value: "b" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(routeMatrixApi.save).toHaveBeenCalled());
+    expect(config.primary.activeProviderId).toBe("a");
+    expect(config.primary.models[0].activeProviderId).toBe("b");
+  });
+  it("blocks saving invalid model capability JSON", async () => {
+    await open();
+    const input = screen.getByLabelText("模型能力参数");
+    fireEvent.change(input, { target: { value: "{invalid" } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("请修正配置");
+    expect(routeMatrixApi.save).not.toHaveBeenCalled();
+  });
 });

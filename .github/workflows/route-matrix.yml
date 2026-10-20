@@ -51,3 +51,10 @@ jobs:
       - name: Backend compile and HTTP integration tests
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix:: -- --test-threads=1
+      - name: Build portable Windows preview
+        run: pnpm tauri build --debug --no-bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cc-switch-route-matrix-windows-x64
+          path: src-tauri/target/debug/cc-switch.exe
+          if-no-files-found: error

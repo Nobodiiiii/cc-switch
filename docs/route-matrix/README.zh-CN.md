@@ -2,6 +2,8 @@
 
 这个扩展为 Codex 增加一个固定连接，把不带前缀的主路由与带前缀的多个副路由放在一起。它基于 CC Switch 4.0.16（上游 `f92ff0b`）。
 
+Windows CI 也会产出包含前端资源的独立测试程序，位于构建的 `cc-switch-route-matrix-windows-x64` artifact。它是未签名的调试构建，不是安装包。运行前先退出原来的 CC Switch，避免被单实例检查切回原版；程序使用现有 CC Switch 数据目录，正式使用前可用上游内置备份功能保存配置。
+
 ## 使用
 
 1. 在 CC Switch 的 Codex 页面添加所需供应商。官方账号卡片必须绑定 CC Switch 账号管理中的具体 ChatGPT 账号。
@@ -20,6 +22,8 @@
 首次接入需要客户端采用 `cc_switch_matrix` 连接。已经运行、仍连旧地址的 Codex 不会被这个扩展强制接管；客户端是否支持重载连接决定是否需要首次重载/重启。旧会话如果固定记录了原供应商，可能需要新建会话。
 
 模型目录由 `/route-matrix/v1/models` 动态返回，配置使用 `model_catalog_url`，移除会屏蔽动态发现的 `model_catalog_json`。[OpenAI 配置参考](https://developers.openai.com/codex/config-reference/)明确把文件目录描述为启动时加载。动态目录何时重新显示在选择器中仍由 Codex 的缓存/刷新机制决定；扩展不会操作或重启 Codex 进程。可在支持任意模型 ID 的客户端直接输入新增 ID。
+
+接入时也会启用 Codex 的 `features.api_key_model_discovery`，确保本地令牌连接能够读取动态目录，断开时恢复原值。此开关和目录认证行为已对照 [OpenAI 的配置供应商实现及测试](https://github.com/openai/codex/blob/main/codex-rs/model-provider/src/provider.rs)核实。
 
 跨供应商/账号不可共用的远端 `previous_response_id`、加密推理状态等仍受上游约束。扩展复用 CC Switch 的历史与协议适配，但不能让一个账号读取另一个账号的远端响应。上游已开始向客户端返回流内容后，不重放整个请求，以免重复生成或调用工具。
 

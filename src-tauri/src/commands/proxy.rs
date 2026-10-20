@@ -65,13 +65,6 @@ pub async fn stop_proxy_server(state: tauri::State<'_, AppState>) -> Result<(), 
 /// 关闭本地路由：所有应用退回直连，再停止代理服务器
 #[tauri::command]
 pub async fn stop_proxy_with_restore(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    if crate::route_matrix::load(&state.db)
-        .map_err(|e| e.to_string())?
-        .enabled
-    {
-        let _guard = crate::route_matrix::WRITE_LOCK.lock().await;
-        crate::route_matrix::connect(state.inner(), false).await?;
-    }
     crate::mode::controller::exit_all(state.inner()).await
 }
 

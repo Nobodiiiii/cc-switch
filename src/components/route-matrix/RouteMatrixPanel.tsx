@@ -21,7 +21,7 @@ import { extractErrorMessage } from "@/utils/errorUtils";
 
 const queryKey = ["route-matrix"];
 const selectClass =
-  "h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm";
+  "h-9 w-52 max-w-full shrink-0 rounded-md border border-input bg-background px-2 text-sm";
 
 export function RouteMatrixPanel({
   providers,
@@ -51,8 +51,10 @@ export function RouteMatrixPanel({
       connect !== false &&
       formRef.current &&
       !formRef.current.reportValidity()
-    )
+    ) {
+      setError("请修正配置中无效的数字或模型能力 JSON 后再保存。");
       return;
+    }
     setPending(true);
     setError("");
     setMessage("");
@@ -101,9 +103,19 @@ export function RouteMatrixPanel({
         </Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>路由矩阵 · Route Matrix</DialogTitle>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto gap-4 p-6">
+          <DialogHeader className="p-0">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>路由矩阵 · Route Matrix</DialogTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={() => setOpen(false)}
+              >
+                关闭
+              </Button>
+            </div>
             <DialogDescription>
               主路由使用原始模型名，手动切换供应商；副路由使用独立前缀和故障转移。保存后，后续请求立即采用新配置。
             </DialogDescription>
@@ -312,7 +324,7 @@ function RouteEditor({
       </div>
       <p className="text-xs text-muted-foreground">
         {primary
-          ? "不带前缀；每个模型必须配置当前供应商的映射。切换前先为相应模型补齐目标。"
+          ? "不带前缀；模型可跟随路由当前供应商，也可单独指定。切换前请补齐相应映射。"
           : `发布为 rm-${route.prefix}/模型名。先尝试当前供应商，再按下方映射顺序转移；不会进入其他路由。前缀移除后仍保留归属。`}
       </p>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -393,7 +405,10 @@ function RouteEditor({
               </Button>
             </div>
             {model.targets.map((target, targetIndex) => (
-              <div key={targetIndex} className="flex gap-2">
+              <div
+                key={targetIndex}
+                className="flex flex-wrap gap-2 sm:flex-nowrap"
+              >
                 <ProviderSelect
                   label="映射供应商"
                   providers={providers}
@@ -408,6 +423,7 @@ function RouteEditor({
                   }
                 />
                 <Input
+                  className="min-w-0 flex-1"
                   aria-label="上游模型 ID"
                   placeholder="该供应商实际使用的模型 ID"
                   value={target.model}
