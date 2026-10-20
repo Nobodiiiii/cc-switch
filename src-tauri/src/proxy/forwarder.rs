@@ -2129,8 +2129,8 @@ impl RequestForwarder {
             super::providers::is_codex_official_provider(provider)
                 .then(|| AuthInfo::new(String::new(), AuthStrategy::CodexOAuth))
         });
-        let mut auth_headers =
-            if let Some(mut auth) = matrix_auth.or_else(|| adapter.extract_auth(provider)) {
+        let extracted_auth = matrix_auth.or_else(|| adapter.extract_auth(provider));
+        let mut auth_headers = if let Some(mut auth) = extracted_auth {
                 // GitHub Copilot 特殊处理：从 CopilotAuthManager 获取真实 token
                 if auth.strategy == AuthStrategy::GitHubCopilot {
                     if let Some(app_handle) = &self.app_handle {
