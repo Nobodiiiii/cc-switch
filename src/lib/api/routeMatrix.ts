@@ -23,6 +23,7 @@ export interface MatrixRoute {
   activeProviderId: string;
   failover: boolean;
   policy: MatrixPolicy;
+  /** Empty uses the official catalog and same-name targets for route members. */
   models: MatrixModel[];
 }
 export interface MatrixConfig {

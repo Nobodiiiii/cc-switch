@@ -52,7 +52,7 @@ export function MatrixModelsEditor({
   return (
     <div className="space-y-4">
       <p className="text-xs text-fg-2">
-        先在供应商卡片中加入所需账号，再配置要发布的模型和映射。每个模型只会使用此路由中的映射。
+        模型映射为选填。留空时使用官方模型目录，按原始模型名转发给此路由的供应商；副路由自动添加自己的前缀。填写后仅发布这里配置的模型和映射。
       </p>
       {memberIds
         .filter((id) => !providers[id])

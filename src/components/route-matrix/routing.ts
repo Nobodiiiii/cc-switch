@@ -163,7 +163,7 @@ export function matrixRouteSections(
     {
       key: "members",
       title: `${primary ? "主路由供应商" : "路由供应商"}（${members.length}）`,
-      emptyText: "从下方加入供应商，再配置此路由的模型。",
+      emptyText: "从下方加入供应商，即可使用官方默认模型；模型映射可选。",
       items: members.flatMap((id) =>
         items.filter((item) => item.provider.id === id),
       ),

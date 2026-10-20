@@ -260,6 +260,142 @@ fn validation_rejects_ambiguous_or_unsafe_configuration() {
 }
 
 #[test]
+fn prefix_validation_reports_the_specific_problem_and_preserves_the_saved_route() {
+    let (config, all) = fixture();
+    let db = Database::memory().unwrap();
+    for provider in all.values() {
+        db.save_provider("codex", provider).unwrap();
+    }
+    save(&db, &config).unwrap();
+    for (prefix, error) in [
+        ("", "不能为空"),
+        ("Any", "只允许小写字母"),
+        ("any/", "只允许小写字母"),
+        ("ccs-any", "不能以保留的 ccs- 开头"),
+        (&"a".repeat(49), "最多 48 个字符"),
+    ] {
+        let mut invalid = config.clone();
+        invalid.secondary[0].prefix = prefix.into();
+        assert!(save(&db, &invalid).unwrap_err().contains(error));
+        assert_eq!(load(&db).unwrap().secondary[0].prefix, "backup");
+    }
+    let mut duplicate = config.clone();
+    let mut other = duplicate.secondary[0].clone();
+    other.id = "other".into();
+    duplicate.secondary.push(other);
+    assert!(save(&db, &duplicate)
+        .unwrap_err()
+        .contains("已被其他路由使用"));
+    let mut valid = config;
+    valid.secondary[0].prefix = "any-2".into();
+    save(&db, &valid).unwrap();
+    let mut reopened = load(&db).unwrap();
+    assert_eq!(reopened.secondary[0].prefix, "any-2");
+    reopened.secondary[0].policy.cooldown_seconds = 30;
+    save(&db, &reopened).unwrap();
+    assert_eq!(load(&db).unwrap().secondary[0].policy.cooldown_seconds, 30);
+}
+
+#[test]
+fn empty_mappings_use_official_models_with_same_name_targets_and_isolated_namespaces() {
+    let (mut config, all) = fixture();
+    config.primary.models.clear();
+    config.primary.provider_ids = vec!["a".into(), "b".into()];
+    config.secondary[0].models.clear();
+    config.secondary[0].provider_ids = vec!["b".into(), "a".into()];
+    config.secondary[0].active_provider_id = "b".into();
+    config.validate(&all).unwrap();
+    let official = defaults::rows();
+    assert!(!official.is_empty());
+    let id = official[0]["slug"].as_str().unwrap();
+    let catalog = config.catalog();
+    let rows = catalog["models"].as_array().unwrap();
+    assert_eq!(rows.len(), official.len() * 2);
+    let main = rows.iter().find(|row| row["slug"] == id).unwrap();
+    assert_eq!(*main, official[0], "official capabilities are preserved");
+    let runtime = Arc::new(Runtime::default());
+    let old = config.resolve(id, &all, runtime.clone()).unwrap();
+    assert_eq!(old.targets.len(), 1, "main remains manual");
+    assert_eq!(old.upstream("a"), Some(id));
+    let secondary = config
+        .resolve(&format!("rm-backup/{id}"), &all, runtime.clone())
+        .unwrap();
+    assert_eq!(secondary.targets.len(), 2);
+    assert_eq!(secondary.upstream("b"), Some(id));
+    secondary.record("b", false);
+    assert!(!secondary.allow("b"));
+    config.primary.active_provider_id = "b".into();
+    let switched = config.resolve(id, &all, runtime.clone()).unwrap();
+    assert_eq!(switched.upstream("b"), Some(id));
+    assert!(switched.allow("b"));
+    assert_eq!(old.upstream("a"), Some(id), "in-flight snapshot retained");
+    for unknown in [
+        format!("rm-missing/{id}"),
+        "rm-backup/".into(),
+        "ccs-any/model".into(),
+        "unknown-model".into(),
+    ] {
+        assert!(config.resolve(&unknown, &all, runtime.clone()).is_err());
+    }
+    config.secondary.clear();
+    assert!(config
+        .resolve(&format!("rm-backup/{id}"), &all, runtime)
+        .is_err());
+}
+
+#[test]
+fn empty_mappings_are_optional_but_still_require_a_valid_provider_and_account() {
+    let (mut config, mut all) = fixture();
+    config.primary.models.clear();
+    config.primary.provider_ids.clear();
+    // Legacy configurations still have a selected provider without providerIds.
+    config.validate(&all).unwrap();
+    assert!(!config.catalog()["models"].as_array().unwrap().is_empty());
+    let model = defaults::initial_model(&config, "model = 'no-longer-published'").unwrap();
+    assert_eq!(
+        defaults::initial_model(&config, &format!("model = '{model}'")).unwrap(),
+        model
+    );
+    assert!(config.resolve(&model, &all, Arc::default()).is_ok());
+    all.get_mut("a").unwrap().category = Some("official".into());
+    assert!(config.validate(&all).unwrap_err().contains("必须绑定"));
+    all.get_mut("a").unwrap().category = None;
+    config.primary.active_provider_id.clear();
+    assert!(config.validate(&all).unwrap_err().contains("选择供应商"));
+    config.enabled = false;
+    config.validate(&all).unwrap();
+    assert!(
+        config.primary.models.is_empty(),
+        "defaults are never persisted as explicit mappings"
+    );
+}
+
+#[test]
+fn explicit_mappings_override_defaults_and_can_hot_reload_back_to_official_models() {
+    let (mut config, all) = fixture();
+    let id = defaults::rows()[0]["slug"].as_str().unwrap().to_owned();
+    assert!(config.resolve(&id, &all, Arc::default()).is_err());
+    config.primary.models[0].id = id.clone();
+    assert_eq!(
+        config
+            .resolve(&id, &all, Arc::default())
+            .unwrap()
+            .upstream("a"),
+        Some("actual-a")
+    );
+    config.primary.provider_ids = vec!["a".into(), "b".into()];
+    config.primary.models.clear();
+    assert_eq!(
+        config
+            .resolve(&id, &all, Arc::default())
+            .unwrap()
+            .upstream("a"),
+        Some(id.as_str())
+    );
+    assert!(config.resolve("gpt-test", &all, Arc::default()).is_err());
+}
+
+#[test]
 fn catalog_and_request_routing_share_the_same_ids() {
     let (config, all) = fixture();
     let catalog = config.catalog();
@@ -514,6 +650,51 @@ async fn running_proxy_hot_reloads_and_fails_over_without_crossing_routes() {
         ("b".into(), "actual-b".into(), "Bearer upstream-b".into())
     );
     assert_eq!(proxy.get_status().await.total_requests, 0); // Original route state is untouched.
+
+    // Empty model lists are real runtime defaults, not just relaxed validation.
+    config.primary.models.clear();
+    config.primary.provider_ids = vec!["a".into(), "b".into()];
+    config.secondary[0].models.clear();
+    config.secondary[0].provider_ids = vec!["a".into(), "b".into()];
+    config.secondary[0].prefix = "any".into();
+    save(&db, &config).unwrap();
+    let default_model = defaults::rows()[0]["slug"].as_str().unwrap().to_owned();
+    for (model, auth) in [
+        (default_model.clone(), "Bearer upstream-b"),
+        (format!("rm-any/{default_model}"), "Bearer upstream-a"),
+    ] {
+        let response: Value = client
+            .post(format!("{origin}/responses"))
+            .bearer_auth("local-test-token")
+            .json(&json!({"model":model, "input":[], "stream":false}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response["model"], default_model);
+        let captured = seen.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(captured.1, default_model);
+        assert_eq!(captured.2, auth);
+    }
+    let catalog: Value = client
+        .get(format!("{origin}/models"))
+        .bearer_auth("local-test-token")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let rows = catalog["models"].as_array().unwrap();
+    assert!(rows.iter().any(|row| row["slug"] == default_model));
+    assert!(rows
+        .iter()
+        .any(|row| row["slug"] == format!("rm-any/{default_model}")));
+    assert!(!rows
+        .iter()
+        .any(|row| row["slug"].as_str().unwrap().starts_with("rm-backup/")));
     proxy.stop().await.unwrap();
     for task in upstreams {
         task.abort();

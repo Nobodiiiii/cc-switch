@@ -28,6 +28,7 @@ import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
 import { MatrixModelsEditor } from "./MatrixModelsEditor";
 import { matrixRouteSections, routeMembers, setRouteMembers } from "./routing";
+import { normalizeRoutePrefix, routePrefixError } from "./validation";
 
 type ProviderActions = Pick<
   ComponentProps<typeof ProviderList>,
@@ -80,6 +81,10 @@ export function RouteMatrixPanel({
   const route = routes.find((item) => item.id === selected) ?? config?.primary;
   const primary = route?.id === config?.primary.id;
   const members = route ? routeMembers(route) : [];
+  const prefixError =
+    editor && config && editor.id !== config.primary.id
+      ? routePrefixError(editor, config.secondary)
+      : "";
 
   async function persist(
     next: MatrixConfig,
@@ -136,11 +141,23 @@ export function RouteMatrixPanel({
     setEditor(structuredClone(route));
   };
   const saveSettings = async () => {
+    if (!editor || !config) return;
+    const next = {
+      ...editor,
+      prefix: normalizeRoutePrefix(editor.prefix),
+    };
+    if (next.id !== config.primary.id) {
+      const validationError = routePrefixError(next, config.secondary);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+    }
     if (!editor || !formRef.current?.reportValidity()) {
       setError("请修正配置中无效的数字或模型能力 JSON 后再保存。");
       return;
     }
-    if (await replaceRoute(editor)) setEditor(undefined);
+    if (await replaceRoute(next)) setEditor(undefined);
   };
   if (!config || !route)
     return (
@@ -298,7 +315,7 @@ export function RouteMatrixPanel({
             onClick={() => openSettings("models")}
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
-            模型映射 · {route.models.length}
+            模型映射 · {route.models.length || "官方默认"}
           </Button>
         </div>
         {members.some((id) => !providers[id]) && (
@@ -458,16 +475,41 @@ export function RouteMatrixPanel({
                           模型前缀
                           <Input
                             aria-label="模型前缀"
+                            aria-describedby="matrix-prefix-help matrix-prefix-preview"
+                            aria-invalid={!!prefixError}
                             required
-                            pattern="[a-z0-9-]+"
+                            maxLength={48}
+                            pattern={"[a-z0-9\\-]{1,48}"}
                             value={editor.prefix}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              setError("");
                               setEditor({
                                 ...editor,
-                                prefix: event.target.value,
+                                prefix: event.target.value.toLowerCase(),
+                              });
+                            }}
+                            onBlur={() =>
+                              setEditor({
+                                ...editor,
+                                prefix: normalizeRoutePrefix(editor.prefix),
                               })
                             }
                           />
+                          <p
+                            id="matrix-prefix-help"
+                            className="text-xs text-fg-2"
+                          >
+                            {prefixError ||
+                              "自动转为小写，1–48 个字母、数字或短横线；前缀须唯一，不能以 ccs- 开头。"}
+                          </p>
+                          <p
+                            id="matrix-prefix-preview"
+                            className="text-xs text-fg-2"
+                          >
+                            模型名预览：rm-
+                            {normalizeRoutePrefix(editor.prefix) || "前缀"}
+                            /模型名
+                          </p>
                         </label>
                       )}
                       <RoutingPolicyFields

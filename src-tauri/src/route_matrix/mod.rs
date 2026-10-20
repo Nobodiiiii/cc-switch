@@ -1,6 +1,7 @@
 //! Route Matrix: isolated Codex routing, configuration and connection lifecycle.
 //! Integration points deliberately use the upstream provider/forwarder interfaces.
 mod connection;
+mod defaults;
 #[cfg(test)]
 mod tests;
 
@@ -141,8 +142,8 @@ impl MatrixConfig {
         if !self.primary.prefix.is_empty() || self.primary.failover {
             return Err("主路由必须不带前缀，并使用手动切换".into());
         }
-        if self.enabled && self.primary.models.is_empty() {
-            return Err("请先添加主路由模型".into());
+        if self.enabled && self.primary.member_ids().is_empty() {
+            return Err("请先为主路由选择供应商；模型映射可留空使用官方默认".into());
         }
         let mut ids = HashSet::new();
         let mut prefixes = HashSet::new();
@@ -154,14 +155,31 @@ impl MatrixConfig {
             if !slug(&route.id) || !ids.insert(&route.id) {
                 return Err("路由 ID 必须唯一，只含小写字母、数字和短横线".into());
             }
-            if i > 0
-                && (!slug(&route.prefix)
-                    || route.prefix.starts_with("ccs-")
-                    || !prefixes.insert(&route.prefix))
-            {
-                return Err(
-                    "副路由前缀必须唯一，只含小写字母、数字和短横线，且不能以 ccs- 开头".into(),
-                );
+            if i > 0 {
+                if route.prefix.is_empty() {
+                    return Err(format!("副路由「{}」的模型前缀不能为空", route.name));
+                }
+                if route.prefix.len() > 48 {
+                    return Err(format!("副路由「{}」的模型前缀最多 48 个字符", route.name));
+                }
+                if !slug(&route.prefix) {
+                    return Err(format!(
+                        "副路由「{}」的模型前缀只允许小写字母、数字和短横线",
+                        route.name
+                    ));
+                }
+                if route.prefix.starts_with("ccs-") {
+                    return Err(format!(
+                        "副路由「{}」的模型前缀不能以保留的 ccs- 开头",
+                        route.name
+                    ));
+                }
+                if !prefixes.insert(&route.prefix) {
+                    return Err(format!(
+                        "副路由前缀 {} 已被其他路由使用，请换一个",
+                        route.prefix
+                    ));
+                }
             }
             if route.policy.failure_threshold == 0
                 || route.policy.max_retries > 20
@@ -178,9 +196,10 @@ impl MatrixConfig {
             }
             let mut model_ids = HashSet::new();
             let mut members = HashSet::new();
-            for id in &route.provider_ids {
+            let member_ids = route.member_ids();
+            for id in &member_ids {
                 if !members.insert(id) {
-                    return Err("主路由供应商不能重复".into());
+                    return Err("路由供应商不能重复".into());
                 }
                 let provider = providers
                     .get(id)
@@ -188,7 +207,7 @@ impl MatrixConfig {
                 validate_account(provider)?;
             }
             if !members.is_empty() && !members.contains(&route.active_provider_id) {
-                return Err("当前供应商必须在主路由勾选的供应商中".into());
+                return Err("当前供应商必须在此路由加入的供应商中".into());
             }
             for model in &route.models {
                 if model.id.trim() != model.id
@@ -243,6 +262,19 @@ impl MatrixConfig {
         .expect("bundled template");
         let mut rows = Vec::new();
         for route in std::iter::once(&self.primary).chain(&self.secondary) {
+            if route.models.is_empty() && !route.member_ids().is_empty() {
+                for mut row in defaults::rows() {
+                    let Some(id) = row["slug"].as_str().map(str::to_owned) else {
+                        continue;
+                    };
+                    if !route.prefix.is_empty() {
+                        row["slug"] = json!(format!("rm-{}/{id}", route.prefix));
+                        let label = row["display_name"].as_str().unwrap_or(&id).to_owned();
+                        row["display_name"] = json!(format!("{} · {label}", route.name));
+                    }
+                    rows.push(row);
+                }
+            }
             for model in &route.models {
                 let id = route.model_id(model);
                 let mut row = template.clone();
@@ -273,17 +305,28 @@ impl MatrixConfig {
         if !self.enabled {
             return Err(invalid("路由矩阵尚未启用"));
         }
-        let (route, entry) = std::iter::once(&self.primary)
-            .chain(&self.secondary)
-            .find_map(|r| {
-                r.models
-                    .iter()
-                    .find(|m| r.model_id(m) == model)
-                    .map(|m| (r, m))
-            })
-            .ok_or_else(|| {
-                ProxyError::InvalidRequest(format!("路由矩阵模型未配置或已移除: {model}"))
-            })?;
+        let missing = || ProxyError::InvalidRequest(format!("路由矩阵模型未配置或已移除: {model}"));
+        // Select the namespace first: a missing secondary never falls back to
+        // the unprefixed defaults, even when the primary has no explicit models.
+        let (route, id) = if model.starts_with("rm-") {
+            self.secondary
+                .iter()
+                .find_map(|route| {
+                    model
+                        .strip_prefix(&format!("rm-{}/", route.prefix))
+                        .map(|id| (route, id))
+                })
+                .ok_or_else(missing)?
+        } else {
+            (&self.primary, model)
+        };
+        let entry = route
+            .models
+            .iter()
+            .find(|entry| entry.id == id)
+            .cloned()
+            .or_else(|| defaults::model(route, id))
+            .ok_or_else(missing)?;
         let selected = entry
             .targets
             .iter()
@@ -354,6 +397,20 @@ fn slug(id: &str) -> bool {
 }
 
 impl Route {
+    fn member_ids(&self) -> Vec<String> {
+        if !self.provider_ids.is_empty() {
+            return self.provider_ids.clone();
+        }
+        let mut seen = HashSet::new();
+        self.models
+            .iter()
+            .flat_map(|model| &model.targets)
+            .map(|target| target.provider_id.clone())
+            .chain((!self.active_provider_id.is_empty()).then(|| self.active_provider_id.clone()))
+            .filter(|id| seen.insert(id.clone()))
+            .collect()
+    }
+
     fn model_id(&self, model: &Model) -> String {
         if self.prefix.is_empty() {
             model.id.clone()

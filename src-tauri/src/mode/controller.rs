@@ -2724,6 +2724,60 @@ mod mode_tests {
         exit(&state, &AppType::Codex).await.unwrap();
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn route_matrix_mode_connects_with_optional_models_and_preserves_the_official_model() {
+        use crate::route_matrix::{self, MatrixConfig, Route};
+        let _home = Home::new();
+        let official = crate::codex_config::codex_official_models_for_routing();
+        let model = official[0]["slug"].as_str().unwrap();
+        let before = format!("model = \"{model}\"\n");
+        seed_codex(&before, None);
+        let rows = codex_a_b();
+        let state = state_with(AppType::Codex, &rows, "a").await;
+        let mut config = MatrixConfig {
+            version: 1,
+            primary: Route {
+                id: "main".into(),
+                provider_ids: vec!["a".into(), "b".into()],
+                active_provider_id: "a".into(),
+                ..Route::default()
+            },
+            ..MatrixConfig::default()
+        };
+        route_matrix::save(&state.db, &config).unwrap();
+        route_matrix::connect(&state, true).await.unwrap();
+        assert_eq!(
+            codex_text().parse::<toml::Value>().unwrap()["model"].as_str(),
+            Some(model)
+        );
+        let connected = codex_text();
+        config.enabled = true;
+        config.primary.active_provider_id = "b".into();
+        route_matrix::save(&state.db, &config).unwrap();
+        assert_eq!(
+            codex_text(),
+            connected,
+            "runtime settings need no client rewrite"
+        );
+        let loaded = route_matrix::load(&state.db).unwrap();
+        assert!(loaded.primary.models.is_empty());
+        assert_eq!(
+            loaded
+                .resolve(
+                    model,
+                    &state.db.get_all_providers("codex").unwrap(),
+                    Arc::default()
+                )
+                .unwrap()
+                .targets[0]
+                .provider_id,
+            "b"
+        );
+        exit(&state, &AppType::Codex).await.unwrap();
+        assert_eq!(codex_text(), before);
+    }
+
     fn settings_path() -> std::path::PathBuf {
         crate::config::get_claude_settings_path()
     }

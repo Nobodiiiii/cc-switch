@@ -2240,6 +2240,11 @@ fn codex_static_official_models() -> Vec<Value> {
     normalize_codex_native_rows(vec![load_codex_classic_tool_template()]).unwrap_or_default()
 }
 
+/// Account-independent official defaults for the isolated Route Matrix mode.
+pub(crate) fn codex_official_models_for_routing() -> Vec<Value> {
+    codex_openai_official_models()
+}
+
 /// 和账号无关的 OpenAI 官方模型列表。不用 `models_cache.json`：它是哪个账号、哪个版本
 /// 写的证明不了（见 `codex_official_models`）。
 #[cfg(not(test))]

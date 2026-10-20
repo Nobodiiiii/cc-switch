@@ -235,7 +235,8 @@ pub async fn connect(state: &AppState, enabled: bool) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     let origin = crate::services::proxy::proxy_origin(&info.address, info.port);
-    let next = client_config(&original, &origin, &token, &config.primary.models[0].id)?;
+    let model = defaults::initial_model(&config, &original)?;
+    let next = client_config(&original, &origin, &token, &model)?;
     state
         .db
         .set_setting(TOKEN_KEY, &token)
