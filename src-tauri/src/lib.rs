@@ -35,6 +35,7 @@ mod prompt;
 mod prompt_files;
 mod provider;
 mod proxy;
+mod route_matrix;
 mod services;
 mod session_manager;
 mod settings;
@@ -1306,6 +1307,7 @@ pub fn run() {
                 // 定下各应用的直连 / 代理模式（处理旧版遗留的接管状态），再把代理模式的
                 // 应用接上。要排在通用配置片段的自动提取之后：它读的是直连的 live。
                 crate::mode::controller::startup(&state).await;
+                crate::route_matrix::startup(state.inner()).await;
                 // 启动流程走完：托盘这时才开始报「路由服务没在运行」，并记下退回直连的应用。
                 crate::tray::mark_startup_settled(&app_handle);
                 // Codex 官方做路由、发布了 Stack 模型时，官方模型列表过期就在后台刷新。
@@ -1447,6 +1449,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::get_route_matrix,
+            commands::save_route_matrix,
+            commands::connect_route_matrix,
             commands::get_providers,
             commands::get_current_provider,
             commands::add_provider,

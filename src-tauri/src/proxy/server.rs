@@ -40,6 +40,7 @@ pub struct ProxyState {
     pub current_providers: Arc<RwLock<std::collections::HashMap<String, (String, String)>>>,
     /// 共享的 ProviderRouter（持有熔断器状态，跨请求保持）
     pub provider_router: Arc<ProviderRouter>,
+    pub matrix_runtime: Arc<crate::route_matrix::Runtime>,
     /// Gemini Native shadow state，用于 thoughtSignature / tool call 回放
     pub gemini_shadow: Arc<GeminiShadowStore>,
     /// Codex Chat bridge history，用于恢复 previous_response_id 指向的 tool call
@@ -85,6 +86,7 @@ impl ProxyServer {
             start_time: Arc::new(RwLock::new(None)),
             current_providers: Arc::new(RwLock::new(std::collections::HashMap::new())),
             provider_router,
+            matrix_runtime: Arc::new(crate::route_matrix::Runtime::default()),
             gemini_shadow: Arc::new(GeminiShadowStore::default()),
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             app_handle,
@@ -298,6 +300,21 @@ impl ProxyServer {
 
     fn build_router(&self) -> Router {
         Router::new()
+            .nest(
+                "/route-matrix",
+                Router::new()
+                    .route("/v1/models", get(handlers::handle_models))
+                    .route("/v1/responses", post(handlers::handle_responses))
+                    .route(
+                        "/v1/responses/compact",
+                        post(handlers::handle_responses_compact),
+                    )
+                    .route("/v1/responses", get(handlers::handle_responses_websocket))
+                    .layer(axum::middleware::from_fn_with_state(
+                        self.state.clone(),
+                        crate::route_matrix::middleware,
+                    )),
+            )
             // 健康检查
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))

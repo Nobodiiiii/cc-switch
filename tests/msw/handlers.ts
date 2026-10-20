@@ -47,6 +47,29 @@ const withJson = async <T>(request: Request): Promise<T> => {
 const success = <T>(payload: T) => HttpResponse.json(payload as any);
 
 export const handlers = [
+  http.post(`${TAURI_ENDPOINT}/get_route_matrix`, () =>
+    HttpResponse.json({
+      version: 1,
+      enabled: false,
+      primary: {
+        id: "main",
+        name: "主路由",
+        prefix: "",
+        activeProviderId: "",
+        failover: false,
+        policy: {
+          maxRetries: 2,
+          firstByteTimeout: 60,
+          idleTimeout: 120,
+          requestTimeout: 120,
+          failureThreshold: 3,
+          cooldownSeconds: 60,
+        },
+        models: [],
+      },
+      secondary: [],
+    }),
+  ),
   http.get(MODELS_DEV_API_URL, () => success({})),
   http.post(`${TAURI_ENDPOINT}/get_migration_result`, () => success(false)),
   http.post(`${TAURI_ENDPOINT}/get_skills_migration_result`, () =>

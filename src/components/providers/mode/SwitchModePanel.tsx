@@ -51,6 +51,7 @@ import {
 import { RouteSettingsSheet } from "./RouteSettingsSheet";
 import { StackSettingsSheet } from "./StackSettingsSheet";
 import { useDesktopConfigMessages } from "./useDesktopConfigMessages";
+import { RouteMatrixPanel } from "@/components/route-matrix/RouteMatrixPanel";
 
 type ListCallbacks = Pick<
   React.ComponentProps<typeof ProviderList>,
@@ -536,6 +537,7 @@ export function SwitchModePanel({
 
   return (
     <>
+      {app === "codex" && <RouteMatrixPanel providers={providers} />}
       <ModeTabs
         modes={modes}
         active={active}

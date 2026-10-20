@@ -93,6 +93,10 @@ pub async fn handle_models(
     uri: axum::http::Uri,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Value>, ProxyError> {
+    if headers.contains_key(crate::route_matrix::MARKER) {
+        crate::route_matrix::authorize(&state.db, &headers)?;
+        return Ok(Json(crate::route_matrix::load(&state.db)?.catalog()));
+    }
     if is_claude_model_discovery(&uri, &headers) {
         return Ok(Json(claude_model_discovery(&state)));
     }
@@ -180,7 +184,11 @@ fn resolve_stack_target(
     state: &ProxyState,
     app_type: &AppType,
     body: &mut Value,
+    headers: &axum::http::HeaderMap,
 ) -> Result<Option<crate::mode::stack::StackTarget>, Box<axum::response::Response>> {
+    if headers.contains_key(crate::route_matrix::MARKER) {
+        return Ok(None);
+    }
     use crate::mode::stack::{self, Decoded, Resolved};
 
     let Some(model) = body.get("model").and_then(Value::as_str) else {
@@ -324,7 +332,7 @@ async fn handle_messages_for_app(
         .to_bytes();
     let mut body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
-    let stack = match resolve_stack_target(&state, &app_type, &mut body) {
+    let stack = match resolve_stack_target(&state, &app_type, &mut body, &headers) {
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };
@@ -930,7 +938,7 @@ pub async fn handle_chat_completions(
     let body_bytes = decode_codex_request_body(&mut headers, body_bytes)?;
     let mut body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
-    let stack = match resolve_stack_target(&state, &AppType::Codex, &mut body) {
+    let stack = match resolve_stack_target(&state, &AppType::Codex, &mut body, &headers) {
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };
@@ -1049,7 +1057,7 @@ async fn handle_responses_for_app(
     let body_bytes = decode_codex_request_body(&mut headers, body_bytes)?;
     let mut body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
-    let stack = match resolve_stack_target(&state, &app_type, &mut body) {
+    let stack = match resolve_stack_target(&state, &app_type, &mut body, &headers) {
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };
@@ -1382,7 +1390,7 @@ async fn handle_responses_compact_for_app(
     let mut body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
     // 压缩请求也带着客户端选中的模型：不解码的话，会带着前缀落到默认路由。
-    let stack = match resolve_stack_target(&state, &app_type, &mut body) {
+    let stack = match resolve_stack_target(&state, &app_type, &mut body, &headers) {
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };

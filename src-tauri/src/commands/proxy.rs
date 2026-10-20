@@ -39,6 +39,12 @@ pub async fn start_proxy_server(
 /// 停止代理服务器（仅停止服务，不恢复/清理 Live 接管状态）
 #[tauri::command]
 pub async fn stop_proxy_server(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    if crate::route_matrix::load(&state.db)
+        .map_err(|e| e.to_string())?
+        .enabled
+    {
+        return Err("路由矩阵仍在使用本地服务，请先恢复原连接并停用矩阵".into());
+    }
     let takeover = state.proxy_service.get_takeover_status().await?;
     if takeover.claude
         || takeover.codex
@@ -59,6 +65,13 @@ pub async fn stop_proxy_server(state: tauri::State<'_, AppState>) -> Result<(), 
 /// 关闭本地路由：所有应用退回直连，再停止代理服务器
 #[tauri::command]
 pub async fn stop_proxy_with_restore(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    if crate::route_matrix::load(&state.db)
+        .map_err(|e| e.to_string())?
+        .enabled
+    {
+        let _guard = crate::route_matrix::WRITE_LOCK.lock().await;
+        crate::route_matrix::connect(state.inner(), false).await?;
+    }
     crate::mode::controller::exit_all(state.inner()).await
 }
 
