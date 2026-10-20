@@ -48,8 +48,28 @@ jobs:
         with:
           workspaces: src-tauri -> target
           shared-key: route-matrix
+      - name: Prepare real Codex model discovery fixture
+        shell: pwsh
+        run: |
+          $probeRoot = Join-Path $env:RUNNER_TEMP 'matrix-model-discovery'
+          New-Item -ItemType Directory -Path $probeRoot -Force | Out-Null
+          npm install --prefix $probeRoot --no-save @openai/codex@0.163.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $binaries = @(Get-ChildItem -LiteralPath (Join-Path $probeRoot 'node_modules') -Recurse -File -Filter codex.exe)
+          if ($binaries.Count -ne 1) { throw 'Expected one pinned Codex executable' }
+          $codexBinary = $binaries[0].FullName
+          $inputPath = Join-Path $probeRoot 'official.json'
+          & $codexBinary debug models --bundled > $inputPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "ROUTE_MATRIX_CODEX_BIN=$codexBinary" >> $env:GITHUB_ENV
+          "ROUTE_MATRIX_CATALOG_INPUT=$inputPath" >> $env:GITHUB_ENV
+          "ROUTE_MATRIX_CATALOG_OUTPUT=$(Join-Path $probeRoot 'catalog.json')" >> $env:GITHUB_ENV
+          "ROUTE_MATRIX_CONFIG_OUTPUT=$(Join-Path $probeRoot 'connection.toml')" >> $env:GITHUB_ENV
+          "ROUTE_MATRIX_PROBE_WORK=$probeRoot" >> $env:GITHUB_ENV
       - name: Backend compile and HTTP integration tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib route_matrix -- --test-threads=1
+      - name: Real Codex model discovery smoke test
+        run: python tests/smoke/route_matrix_discovery.py --codex "$env:ROUTE_MATRIX_CODEX_BIN" --catalog "$env:ROUTE_MATRIX_CATALOG_OUTPUT" --config "$env:ROUTE_MATRIX_CONFIG_OUTPUT" --work-dir "$env:ROUTE_MATRIX_PROBE_WORK"
       - name: Build portable Windows preview
         run: pnpm tauri build --debug --no-bundle
       - uses: actions/upload-artifact@v7

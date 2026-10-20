@@ -1,5 +1,6 @@
 //! Route Matrix: isolated Codex routing, configuration and connection lifecycle.
 //! Integration points deliberately use the upstream provider/forwarder interfaces.
+mod catalog;
 mod connection;
 mod defaults;
 #[cfg(test)]
@@ -252,10 +253,20 @@ impl MatrixConfig {
                 }
             }
         }
-        Ok(())
+        catalog::ensure_size(&self.catalog())
     }
 
     pub fn catalog(&self) -> Value {
+        self.catalog_with_defaults(&defaults::rows())
+    }
+
+    pub fn checked_catalog(&self) -> Result<Value, ProxyError> {
+        let result = self.catalog();
+        catalog::ensure_size(&result).map_err(invalid)?;
+        Ok(result)
+    }
+
+    fn catalog_with_defaults(&self, default_rows: &[Value]) -> Value {
         let template: Value = serde_json::from_str(include_str!(
             "../resources/codex_native_responses_template.json"
         ))
@@ -263,7 +274,7 @@ impl MatrixConfig {
         let mut rows = Vec::new();
         for route in std::iter::once(&self.primary).chain(&self.secondary) {
             if route.models.is_empty() && !route.member_ids().is_empty() {
-                for mut row in defaults::rows() {
+                for mut row in default_rows.iter().cloned() {
                     let Some(id) = row["slug"].as_str().map(str::to_owned) else {
                         continue;
                     };
@@ -293,7 +304,9 @@ impl MatrixConfig {
                 rows.push(row);
             }
         }
-        json!({"models": rows})
+        let mut result = json!({"models": rows});
+        catalog::compact(&mut result);
+        result
     }
 
     pub fn resolve(

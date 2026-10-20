@@ -399,6 +399,122 @@ fn explicit_mappings_override_defaults_and_can_hot_reload_back_to_official_model
 }
 
 #[test]
+fn large_catalog_only_removes_equivalent_legacy_instructions() {
+    let (mut config, _) = fixture();
+    config.primary.models.clear();
+    config.secondary[0].models.clear();
+    let instructions = "x".repeat(300_000);
+    let official = json!({
+        "slug":"gpt-large", "display_name":"Large", "visibility":"list",
+        "base_instructions":instructions,
+        "model_messages":{"instructions_template":instructions,"permissions":{"policy":"preserve"}},
+        "comp_hash":"keep-hash", "context_window":1_000_000, "input_modalities":["text","image"]
+    });
+    let result = config.catalog_with_defaults(&[official.clone()]);
+    catalog::ensure_size(&result).unwrap();
+    let rows = result["models"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        assert!(row.get("base_instructions").is_none());
+        for key in [
+            "model_messages",
+            "comp_hash",
+            "context_window",
+            "input_modalities",
+        ] {
+            assert_eq!(row[key], official[key]);
+        }
+    }
+    // A different legacy value is an explicit override, never redundant data.
+    let mut different = official;
+    different["base_instructions"] = json!("different legacy instructions");
+    let mut oversized =
+        json!({"models":[different.clone(),different.clone(),different.clone(),different]});
+    let before = oversized.clone();
+    catalog::compact(&mut oversized);
+    assert_eq!(oversized, before);
+    assert!(catalog::ensure_size(&oversized).is_err());
+}
+
+#[test]
+fn over_limit_catalog_cannot_replace_a_working_configuration() {
+    let (mut config, all) = fixture();
+    let db = Database::memory().unwrap();
+    for provider in all.values() {
+        db.save_provider("codex", provider).unwrap();
+    }
+    save(&db, &config).unwrap();
+    config.primary.models[0].catalog.insert(
+        "extra_metadata".into(),
+        json!("x".repeat(catalog::MAX_BYTES)),
+    );
+    assert!(save(&db, &config).unwrap_err().contains("1 MiB"));
+    assert!(!load(&db).unwrap().primary.models[0]
+        .catalog
+        .contains_key("extra_metadata"));
+    assert!(config.checked_catalog().is_err());
+}
+
+#[test]
+fn route_matrix_real_client_catalog_fixture() {
+    // CI provides a catalog from the pinned real Codex binary. Export the
+    // actual Rust-generated response and connection for the model/list smoke
+    // test; ordinary unit tests need no external executable.
+    let Ok(input) = std::env::var("ROUTE_MATRIX_CATALOG_INPUT") else {
+        return;
+    };
+    let raw: Value = serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
+    let official =
+        crate::codex_config::normalize_codex_native_rows(raw["models"].as_array().unwrap().clone())
+            .unwrap();
+    assert!(
+        serde_json::to_vec(&json!({"models":[official.clone(),official.clone()].concat()}))
+            .unwrap()
+            .len()
+            > catalog::MAX_BYTES
+    );
+    let (mut config, _) = fixture();
+    config.primary.models.clear();
+    config.secondary[0].models.clear();
+    let result = config.catalog_with_defaults(&official);
+    catalog::ensure_size(&result).unwrap();
+    for row in result["models"].as_array().unwrap() {
+        let id = row["slug"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("rm-backup/")
+            .unwrap_or(row["slug"].as_str().unwrap());
+        let original = official
+            .iter()
+            .find(|original| original["slug"] == id)
+            .unwrap();
+        for (key, value) in original.as_object().unwrap() {
+            if ["base_instructions", "slug", "display_name"].contains(&key.as_str()) {
+                continue;
+            }
+            assert_eq!(&row[key], value, "native field {key} changed for {id}");
+        }
+    }
+    std::fs::write(
+        std::env::var("ROUTE_MATRIX_CATALOG_OUTPUT").unwrap(),
+        serde_json::to_vec(&result).unwrap(),
+    )
+    .unwrap();
+    let connection = client_config(
+        "",
+        "http://127.0.0.1:19000",
+        "probe-local-token",
+        official[0]["slug"].as_str().unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        std::env::var("ROUTE_MATRIX_CONFIG_OUTPUT").unwrap(),
+        connection,
+    )
+    .unwrap();
+}
+
+#[test]
 fn catalog_and_request_routing_share_the_same_ids() {
     let (config, all) = fixture();
     let catalog = config.catalog();

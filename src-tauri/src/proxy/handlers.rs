@@ -95,7 +95,9 @@ pub async fn handle_models(
 ) -> Result<Json<Value>, ProxyError> {
     if headers.contains_key(crate::route_matrix::MARKER) {
         crate::route_matrix::authorize(&state.db, &headers)?;
-        return Ok(Json(crate::route_matrix::load(&state.db)?.catalog()));
+        return Ok(Json(
+            crate::route_matrix::load(&state.db)?.checked_catalog()?,
+        ));
     }
     if is_claude_model_discovery(&uri, &headers) {
         return Ok(Json(claude_model_discovery(&state)));
