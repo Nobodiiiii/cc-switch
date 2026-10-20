@@ -498,23 +498,37 @@ function RouteEditor({
                 </Button>
               </div>
             ))}
-            {!primary && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  update({
-                    ...model,
-                    targets: [
-                      ...model.targets,
-                      { providerId: "", model: model.id },
-                    ],
-                  })
-                }
-              >
-                添加上游映射
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                primary &&
+                memberIds.every((id) =>
+                  model.targets.some((target) => target.providerId === id),
+                )
+              }
+              onClick={() =>
+                update({
+                  ...model,
+                  targets: [
+                    ...model.targets,
+                    {
+                      providerId: primary
+                        ? (memberIds.find(
+                            (id) =>
+                              !model.targets.some(
+                                (target) => target.providerId === id,
+                              ),
+                          ) ?? "")
+                        : "",
+                      model: model.id,
+                    },
+                  ],
+                })
+              }
+            >
+              添加上游映射
+            </Button>
             <details>
               <summary className="cursor-pointer text-xs text-muted-foreground">
                 模型能力参数（Codex 原生 JSON）

@@ -2677,8 +2677,7 @@ mod mode_tests {
             app_mode_view(&state, &AppType::Codex).unwrap().mode,
             "matrix"
         );
-        let connected = codex_text();
-        assert!(connected.contains("cc_switch_matrix"));
+        assert!(codex_text().contains("cc_switch_matrix"));
         assert!(
             enter_with_route(&state, &AppType::Codex, false, Some("missing"))
                 .await
@@ -2689,6 +2688,7 @@ mod mode_tests {
             "matrix",
             "failed transition restores the active mode"
         );
+        let connected = codex_text();
         assert!(ProviderService::switch(&state, AppType::Codex, "b").is_err());
         let mut edited = rows[0].clone();
         edited.name = "Edited while matrix active".into();
